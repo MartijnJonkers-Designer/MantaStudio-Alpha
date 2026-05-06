@@ -1,8 +1,9 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.1 (baseline)
-   Bare ground state: black background, Geist Mono 900,
-   centered headline at 18vw, full-viewport WebGL canvas behind.
-   No interaction, no layout, no design system yet.
+   AUROS — baseline styles
+
+   Pure black ground (overridden by Three.js clearColor at runtime),
+   full-viewport WebGL canvas, no scroll. Theme-specific styles live
+   in the inline <style> block in Index.html.
    ============================================================ */
 
 :root {
@@ -30,23 +31,4 @@ html, body {
   height: 100%;
   z-index: 0;
   display: block;
-}
-
-.headline {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-family: "Geist Mono", ui-monospace, monospace;
-  font-weight: 900;
-  font-size: 18vw;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  color: var(--ink);
-  text-transform: uppercase;
-  pointer-events: none;
-  padding: 0 4vw;
 }

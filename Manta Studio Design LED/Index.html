@@ -9,32 +9,16 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <!-- 400 + 500 for the corner HUDs, 900 for the wordmark headline. -->
   <link
-    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;900&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
     rel="stylesheet"
   />
 
   <link rel="stylesheet" href="Styles.css" />
 
-  <!-- v0.7 brand integration:
-         - Logo lives in the shader (centered upper region of viewport).
-         - Headline drops to 8vw, anchored at the bottom — like the
-           MANTAWORKS wordmark below the brand mark.
-         - Four corner HUDs in gold for the technical-instrument frame. -->
+  <!-- v0.8: wordmark removed. Only the shader-rendered brand mark and
+       the four corner HUDs remain. -->
   <style>
-    .headline {
-      flex-direction: column;
-      justify-content: flex-end;
-      padding-bottom: 14vh;
-      font-size: 8vw;
-      letter-spacing: 0.06em;
-      gap: 0.05em;
-    }
-    .headline > span { display: block; }
-    .headline__gold   { color: #D4AF37; }
-    .headline__silver { color: #C0C0C0; }
-
     /* Corner HUD readouts — gold technical markers in the four corners. */
     .hud {
       position: fixed;
@@ -69,16 +53,10 @@
 
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
 
-  <!-- Wordmark below the shader-rendered brand mark. -->
-  <h1 class="headline">
-    <span class="headline__gold">WE MOVE</span>
-    <span class="headline__silver">THE DEEP</span>
-  </h1>
-
   <!-- Corner technical HUDs — gold instrument readouts. -->
   <aside class="hud hud--tl" aria-hidden="true">
     <span><span class="hud__mute">SYS</span> AUROS</span>
-    <span><span class="hud__mute">VER</span> 0.7 / GLD</span>
+    <span><span class="hud__mute">VER</span> 0.8 / GLD</span>
   </aside>
   <aside class="hud hud--tr" aria-hidden="true">
     <span><span class="hud__mute">ENT</span> MANTA</span>
@@ -90,7 +68,7 @@
   </aside>
   <aside class="hud hud--br" aria-hidden="true">
     <span><span class="hud__mute">EST</span> MMXXVI</span>
-    <span><span class="hud__mute">SIG</span> AUR.7</span>
+    <span><span class="hud__mute">SIG</span> AUR.8</span>
   </aside>
 
   <script type="module" src="main.js"></script>
