@@ -1,12 +1,20 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.6 (Brand: gold + silver on midnight navy)
+   AUROS — Liquid Engine v0.7 (Integrated brand shader)
 
-   Aligned with the official MantaStudio brand palette. Gold appears
-   only on the wave crests; the rest of the field reads as deep ocean.
-   Bloom is barely perceptible — a shimmer, not a glow.
+   The MantaWorks manta silhouette is baked into the same fragment
+   shader as the fbm liquid surface. The logo is sampled at the same
+   ripple-displaced UV as the rest of the field, so mouse motion
+   physically warps the brand mark instead of just the water around it.
 
-   Pipeline unchanged from v0.3-v0.5:
-     ShaderMaterial (fbm) -> RenderPass -> UnrealBloomPass -> OutputPass
+   buildLogoTexture() draws an APPROXIMATE manta silhouette into a
+   1024x512 canvas (three overlapping blurred ellipses: main body,
+   right tail, left wing sweep). The trace is hand-tuned from the
+   reference image — not pixel-perfect to the brand. Swap the canvas
+   drawing for an SVG path / rendered image when the real asset is
+   available; the rest of the integration architecture stays the same.
+
+   Pipeline unchanged from v0.3-v0.6:
+     ShaderMaterial -> RenderPass -> UnrealBloomPass -> OutputPass
    ============================================================ */
 
 import * as THREE from "three";
@@ -22,6 +30,60 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     return;
   }
 
+  /* -------- Logo texture: procedural canvas trace --------
+     Three overlapping blurred ellipses approximating the manta wing
+     silhouette from the brand image. Drawn into a 1024x512 (2:1) canvas,
+     wrapped to ClampToEdge so out-of-region samples return black. */
+  function buildLogoTexture() {
+    const c = document.createElement("canvas");
+    c.width = 1024; c.height = 512;
+    const g = c.getContext("2d");
+
+    g.fillStyle = "#000000";
+    g.fillRect(0, 0, 1024, 512);
+
+    g.fillStyle = "#FFFFFF";
+    g.filter = "blur(8px)";
+
+    // Main wing body — wide swept ellipse, slightly tilted
+    g.save();
+    g.translate(450, 256);
+    g.rotate(-0.06);
+    g.scale(1.05, 0.40);
+    g.beginPath();
+    g.arc(0, 0, 380, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+
+    // Right tail extension — narrower, angled up-right
+    g.save();
+    g.translate(820, 230);
+    g.rotate(0.30);
+    g.scale(1.30, 0.25);
+    g.beginPath();
+    g.arc(0, 0, 130, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+
+    // Left wing extension — long sweep, angled down-left
+    g.save();
+    g.translate(180, 240);
+    g.rotate(-0.25);
+    g.scale(1.50, 0.30);
+    g.beginPath();
+    g.arc(0, 0, 200, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
   /* -------- Scene + camera + renderer -------- */
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -34,7 +96,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x020611, 1);   // deep midnight navy
+  renderer.setClearColor(0x01050F, 1);   // deep midnight navy
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -42,6 +104,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uMouse:      { value: new THREE.Vector2(0.5, 0.5) },
     uDisplace:   { value: 0 },
     uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+    uLogo:       { value: buildLogoTexture() },
   };
 
   /* -------- Shaders -------- */
@@ -54,11 +117,12 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   `;
 
   const fragmentShader = /* glsl */ `
-    uniform float uTime;
-    uniform vec2  uMouse;
-    uniform float uDisplace;
-    uniform vec2  uResolution;
-    varying vec2  vUv;
+    uniform float       uTime;
+    uniform vec2        uMouse;
+    uniform float       uDisplace;
+    uniform vec2        uResolution;
+    uniform sampler2D   uLogo;
+    varying vec2        vUv;
 
     /* Stefan Gustavson 2D simplex noise (public domain). */
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -103,39 +167,72 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     }
 
     /* Brand palette.
-       cValley = #020611 (deep midnight navy)
+       cValley = #01050F (deep midnight navy)
        cPeak   = #D4AF37 (muted gold) */
-    const vec3 cValley = vec3(0.0078, 0.0235, 0.0667);
+    const vec3 cValley = vec3(0.0039, 0.0196, 0.0588);
     const vec3 cPeak   = vec3(0.8314, 0.6863, 0.2157);
+
+    /* Logo footprint within aspect-corrected viewport.
+       Texture is 2:1; we stretch p by these factors so the logo
+       fits cleanly into the central 70% width region.
+       Slight upward offset so the logo sits above the wordmark. */
+    const vec2  LOGO_SCALE  = vec2(0.70, 0.35);
+    const float LOGO_OFFSET = -0.12;       // shift logo UP toward upper half
 
     void main() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
       vec2 p = (vUv - 0.5) * aspect;
+      p.y -= LOGO_OFFSET;                  // move our origin so 0,0 is the logo center
 
       /* Mouse ripple wake. */
       vec2 mp = (uMouse - 0.5) * aspect;
+      mp.y -= LOGO_OFFSET;
       vec2 toM = p - mp;
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* Slow flow + 20%-smaller features (v0.5 settings preserved). */
+      /* Ambient warp — tiny noise field that lets the surface (and the logo)
+         drift gently even when the cursor is still. Scaled down so it
+         doesn't compete with the mouse wake. */
       float t = uTime * 0.04;
+      vec2 ambientWarp = vec2(
+        fbm(p * 1.4 + vec2(t * 0.7, 0.0)),
+        fbm(p * 1.4 + vec2(0.0, t * 0.5))
+      ) * 0.035;
+
+      vec2 totalWarp = ripple + ambientWarp;
+
+      /* ---- Logo sample (warped UV) ----
+         The same totalWarp that distorts the fbm field also distorts
+         the logo lookup, so ripples physically bend the silhouette. */
+      vec2 logoP  = p - totalWarp;
+      vec2 logoUv = logoP / LOGO_SCALE + 0.5;
+      float logoMaskRaw = texture2D(uLogo, logoUv).r;
+      /* Soft falloff so the silhouette feathers into the surrounding liquid. */
+      float logoMask = smoothstep(0.15, 0.65, logoMaskRaw);
+
+      /* Molten surface: high-frequency fbm modulates the logo brightness
+         so it doesn't read as a flat gold patch. */
+      float surface = fbm(p * 4.5 + totalWarp + vec2(t * 1.3));
+      surface = surface * 0.5 + 0.5;
+      float logoMolten = logoMask * mix(0.65, 1.0, surface);
+
+      /* ---- Background fbm peaks (v0.6 math, unchanged) ---- */
       vec2 q = p * 2.0 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
         fbm(q + vec2(0.0,       t * 0.8  ))
       );
       vec2 q2 = q + warp * 0.55;
-      float v = fbm(q2 + vec2(t * 0.5));
+      float vBg = fbm(q2 + vec2(t * 0.5));
+      vBg = vBg * 0.5 + 0.5;
+      vBg = smoothstep(0.68, 0.92, vBg);
+      vBg = pow(vBg, 1.3);
 
-      /* "Gold only on peaks" — narrower threshold and steeper pow.
-         Most of the field stays flat dark navy; only the highest crests
-         pick up the gold tint. Reads as specular highlights on water. */
-      v = v * 0.5 + 0.5;
-      v = smoothstep(0.68, 0.92, v);    // tighter low end (was 0.55)
-      v = pow(v, 1.3);                   // darken mid-tones (was 0.85)
+      /* Combine: logo dominates inside its region; ambient peaks scatter
+         elsewhere at reduced intensity (the brand mark is the focal point). */
+      float v = max(logoMolten, vBg * 0.55);
 
-      /* Composite into the brand palette. */
       vec3 col = mix(cValley, cPeak, v);
 
       gl_FragColor = vec4(col, 1.0);
@@ -154,10 +251,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);
 
-  /* -------- Post-processing pipeline --------
-     Bloom strength dropped from 0.15 -> 0.10. Threshold and radius
-     unchanged: gold (rec709 luminance ~0.68) still blooms cleanly,
-     but as a barely-there shimmer. */
+  /* -------- Post-processing: bloom 0.10 (gold elements only) -------- */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(window.innerWidth, window.innerHeight);
@@ -166,9 +260,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.10,    // strength    — very subtle shimmer (was 0.15)
-    0.60,    // radius      — unchanged
-    0.35     // threshold   — unchanged
+    0.10,    // strength
+    0.60,    // radius
+    0.35     // threshold (only gold passes; navy bg is far below)
   );
   composer.addPass(bloomPass);
 
@@ -225,5 +319,5 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.6 — brand palette (gold + silver) · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.7 — integrated brand shader · Three.js", THREE.REVISION);
 })();

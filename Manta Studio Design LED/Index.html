@@ -3,37 +3,59 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#020611" />
-  <title>Auros — Liquid Engine</title>
-  <meta name="description" content="Auros: a liquid rendering engine." />
+  <meta name="theme-color" content="#01050F" />
+  <title>Auros — MantaWorks</title>
+  <meta name="description" content="MantaWorks. Auros liquid engine." />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <!-- 400 + 500 for the corner HUDs, 900 for the wordmark headline. -->
   <link
-    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@900&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;900&display=swap"
     rel="stylesheet"
   />
 
   <link rel="stylesheet" href="Styles.css" />
 
-  <!-- v0.6 brand palette: WE MOVE in gold, THE DEEP in silver,
-       both on the deep midnight navy ground. mix-blend-mode dropped
-       — against this palette it produced black holes (gold-on-gold)
-       and muddy blues (silver-on-gold) instead of luxury contrast.
-       The headline now stacks the two lines vertically via
-       flex-direction: column on the parent. -->
+  <!-- v0.7 brand integration:
+         - Logo lives in the shader (centered upper region of viewport).
+         - Headline drops to 8vw, anchored at the bottom — like the
+           MANTAWORKS wordmark below the brand mark.
+         - Four corner HUDs in gold for the technical-instrument frame. -->
   <style>
     .headline {
       flex-direction: column;
+      justify-content: flex-end;
+      padding-bottom: 14vh;
+      font-size: 8vw;
+      letter-spacing: 0.06em;
+      gap: 0.05em;
     }
-    .headline > span {
-      display: block;
-    }
+    .headline > span { display: block; }
     .headline__gold   { color: #D4AF37; }
     .headline__silver { color: #C0C0C0; }
+
+    /* Corner HUD readouts — gold technical markers in the four corners. */
+    .hud {
+      position: fixed;
+      z-index: 2;
+      pointer-events: none;
+      font-family: "Geist Mono", ui-monospace, monospace;
+      font-weight: 500;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #D4AF37;
+      line-height: 1.5;
+    }
+    .hud--tl { top: 24px;    left: 24px;  text-align: left;  }
+    .hud--tr { top: 24px;    right: 24px; text-align: right; }
+    .hud--bl { bottom: 24px; left: 24px;  text-align: left;  }
+    .hud--br { bottom: 24px; right: 24px; text-align: right; }
+    .hud > span { display: block; }
+    .hud__mute { color: #6A6E7A; }
   </style>
 
-  <!-- Import map: "three" + addons namespace, both pinned to 0.170.0. -->
   <script type="importmap">
   {
     "imports": {
@@ -47,10 +69,29 @@
 
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
 
+  <!-- Wordmark below the shader-rendered brand mark. -->
   <h1 class="headline">
     <span class="headline__gold">WE MOVE</span>
     <span class="headline__silver">THE DEEP</span>
   </h1>
+
+  <!-- Corner technical HUDs — gold instrument readouts. -->
+  <aside class="hud hud--tl" aria-hidden="true">
+    <span><span class="hud__mute">SYS</span> AUROS</span>
+    <span><span class="hud__mute">VER</span> 0.7 / GLD</span>
+  </aside>
+  <aside class="hud hud--tr" aria-hidden="true">
+    <span><span class="hud__mute">ENT</span> MANTA</span>
+    <span><span class="hud__mute">CLS</span> WORKS</span>
+  </aside>
+  <aside class="hud hud--bl" aria-hidden="true">
+    <span><span class="hud__mute">LAT</span> 52.234 N</span>
+    <span><span class="hud__mute">LON</span> 5.176 E</span>
+  </aside>
+  <aside class="hud hud--br" aria-hidden="true">
+    <span><span class="hud__mute">EST</span> MMXXVI</span>
+    <span><span class="hud__mute">SIG</span> AUR.7</span>
+  </aside>
 
   <script type="module" src="main.js"></script>
 </body>
