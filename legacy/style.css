@@ -1,0 +1,779 @@
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --gold:       #c9a84c;
+  --gold-light: #e8c96a;
+  --gold-pale:  #f0d878;
+  --gold-dim:   #5a4318;
+}
+
+/*
+  PAGE STRUCTURE
+  ══════════════
+  body                 min-height: 600vh  (the full scrollable distance)
+  ├── #snow-canvas     position: fixed, z:2  (marine particles)
+  ├── body::before     position: fixed, z:500  (film grain)
+  ├── #hero            position: relative  (scrolls naturally off-screen)
+  │   ├── .title-block z:10
+  │   ├── .manta-container  z:8 (body behind title), z:12 (wings in front)
+  │   └── #spine-svg   position:absolute inside #hero, z:4
+  │                    top = mantaContainer.offsetTop + mantaContainer.offsetHeight
+  │                    This is DOCUMENT-FLOW math — never affected by scroll.
+  │                    The SVG is 500vh tall so the path extends far into abyss.
+  ├── .scroll-hint     position: fixed, z:600
+  └── .depth-ui        position: fixed, z:600
+
+  WHY SPINE INSIDE HERO WORKS
+  ════════════════════════════
+  • #hero has position:relative → establishes a containing block.
+  • #spine-svg has position:absolute; top: <tailY>px.
+  • tailY = mantaContainer.offsetTop + mantaContainer.offsetHeight
+    Both offsetTop and offsetHeight are measured from #hero's padding edge,
+    so they're pure layout math independent of scroll position.
+  • When the user scrolls, #hero moves up as a unit — manta + spine move
+    together, so the weld is maintained for the brief moment both are visible.
+  • Once the manta exits, the spine SVG (500vh tall, overflow:visible) continues
+    to appear on screen via its own length. The strokeDashoffset animation
+    keeps revealing more path as scroll progresses.
+*/
+
+html {
+  /* height:auto — no double min-height fighting body */
+  height: auto;
+}
+
+body {
+  min-height: 600vh; /* sole source of page scroll distance */
+  padding-bottom: 1000px; /* landing space — keeps 6000m reveal on screen */
+  /* Start color — GSAP animates this; must be flat (no gradient) */
+  background-color: #000d1a;
+  overflow-x: hidden;
+  font-family: 'Cormorant Garamond', serif;
+  color: var(--gold);
+}
+
+/* Film grain — fine filmic noise, very low opacity for atmosphere
+   without visible texture. Higher baseFrequency = finer grain. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.92' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+  pointer-events: none;
+  z-index: 500;
+  opacity: 0.05;
+  animation: grain 0.12s steps(1) infinite;
+}
+@keyframes grain {
+  0%  { background-position:   0%   0%; }
+  20% { background-position: -14%   9%; }
+  40% { background-position:   7% -20%; }
+  60% { background-position:  19%  13%; }
+  80% { background-position:  -9%  23%; }
+ 100% { background-position:   0%   0%; }
+}
+
+/* Marine snow */
+#snow-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Atmospheric tint overlay
+   ────────────────────────
+   Sits above body bg color (which JS animates), below all content (z:1).
+   Adds a subtle vertical gradient that gives the surface a teal cast
+   and the deep a hint of purple — independent of scroll, just ambience.
+   Body bg color is the dominant signal; this is a 35%-opacity wash. */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    linear-gradient(
+      to bottom,
+      rgba(20, 90, 110, 0.45)   0%,    /* teal surface */
+      rgba(10, 50, 100, 0.30)  18%,    /* sunlight blue */
+      rgba(45, 25, 90, 0.32)   42%,    /* twilight purple */
+      rgba(8, 18, 60, 0.40)    72%,    /* abyssal blue */
+      rgba(0, 0, 0, 0.55)     100%     /* black floor */
+    );
+  mix-blend-mode: soft-light;
+}
+
+/* Abyss floor — sandy reveal at the very bottom of the descent
+   ────────────────────────────────────────────────────────────
+   Fixed element, opacity owned by GSAP (fades in over final 5%).
+   Texture: warm gradient + SVG fractal noise overlay. */
+/* Abyss floor — cinematic seabed reveal at end of descent
+   ────────────────────────────────────────────────────────
+   Three-layer composite:
+   1. Container has a radial gradient — bright sand where spine
+      meets floor (top-center), darkening outward and toward bottom.
+      This creates the "spotlight at the touching point" effect.
+   2. ::before — gritty SVG fractal noise overlay (organic grain).
+   3. ::after — directional shadow gradient deepening the bottom,
+      reinforcing the light falloff.
+   The whole layer is masked with a vertical gradient so the top
+   100px feathers softly into the water above (no hard edge).
+   Opacity owned by GSAP — fades in over final 8% of scroll. */
+#abyss-floor {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 36vh;
+  z-index: 3;            /* above particles (z:2), below cards (z:1000) */
+  pointer-events: none;
+  opacity: 0;            /* GSAP fades in */
+  /* Radial light falloff — bright sand at top-center where the
+     spine touches down, fading to deep shadow at the corners. */
+  background:
+    radial-gradient(
+      ellipse 70% 90% at 50% 0%,
+      rgba(120,  90,  42, 0.95)   0%,    /* lit sand top-center */
+      rgba( 80,  58,  24, 0.88)  25%,
+      rgba( 50,  35,  14, 0.82)  55%,
+      rgba( 22,  15,   6, 0.85)  85%,
+      rgba(  4,   2,   0, 0.92) 100%     /* black corners/bottom */
+    );
+  /* Radial-gradient mask — feathers the seafloor on three sides:
+     softens the top edge into the water (~100px) and fades the
+     left/right corners toward transparency. The ellipse is wider
+     than tall so the side-feather is gentler than the top-feather.
+     Result: the floor reads as a continuous landscape rather than
+     a rectangular slab. */
+  -webkit-mask-image: radial-gradient(
+    ellipse 130% 110% at 50% 100%,
+    black              55%,
+    rgba(0,0,0,0.85)   75%,
+    rgba(0,0,0,0.4)    92%,
+    transparent       100%
+  );
+          mask-image: radial-gradient(
+    ellipse 130% 110% at 50% 100%,
+    black              55%,
+    rgba(0,0,0,0.85)   75%,
+    rgba(0,0,0,0.4)    92%,
+    transparent       100%
+  );
+}
+
+#abyss-floor::before {
+  /* Gritty seabed grain — finer + higher contrast than the prior
+     sand pass. baseFrequency 0.85 gives small particles; the
+     ColorMatrix turns the noise warm/earthy (not grey). */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='s'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.62  0 0 0 0 0.46  0 0 0 0 0.22  0 0 0 1.4 -0.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23s)'/%3E%3C/svg%3E");
+  background-size: 380px 380px;
+  mix-blend-mode: overlay;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+#abyss-floor::after {
+  /* Directional shadow — deepens the bottom + edges, reinforcing
+     the radial falloff above. Sits on top of noise. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    /* Edge darkening (left/right vignette) */
+    linear-gradient(
+      to right,
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0)   25%,
+      rgba(0, 0, 0, 0)   75%,
+      rgba(0, 0, 0, 0.55) 100%
+    ),
+    /* Bottom shadow — deepest at very bottom */
+    linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0)        0%,
+      rgba(0, 0, 0, 0)       45%,
+      rgba(0, 0, 0, 0.45)    80%,
+      rgba(0, 0, 0, 0.75)   100%
+    );
+  pointer-events: none;
+}
+
+/* Ambient gold haze — sits in the water just above the seafloor.
+   Simulates the gold spine's light bleeding into the deep water
+   above the sand. Fades in alongside #abyss-floor.
+   Separate element because mask-image on the floor clips its own
+   box-shadow, so we render the haze in its own layer. */
+#abyss-floor-glow {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 36vh;          /* sits just above the floor */
+  height: 14vh;
+  z-index: 3;            /* same plane as the floor */
+  pointer-events: none;
+  opacity: 0;            /* GSAP fades in */
+  background: radial-gradient(
+    ellipse 50% 100% at 50% 100%,
+    rgba(212, 175, 55, 0.22)   0%,
+    rgba(212, 175, 55, 0.10)  40%,
+    rgba(212, 175, 55, 0)    100%
+  );
+  filter: blur(8px);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   HERO
+   position: relative — no fixed, no sticky, no pin.
+   Scrolls naturally. Has overflow:visible so the tall spine
+   SVG child can extend downward beyond the hero's own height.
+   ══════════════════════════════════════════════════════════════ */
+#hero {
+  position: relative;       /* containing block for #spine-svg */
+  width: 100%;
+  padding-top: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: visible;        /* spine (800vh tall) extends below */
+  /* No z-index here — let children declare their own */
+}
+
+/* Title: z 10 — above manta body (8), below wings (12) */
+.title-block {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  margin-bottom: -2rem;   /* wings will visually overlap from below */
+}
+.title-block h1 {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.62rem, 1.1vw, 0.9rem);
+  font-weight: 300;
+  letter-spacing: 0.65em;
+  color: rgba(201,168,76,0.62);
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
+.title-block .sub {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: clamp(0.55rem, 0.95vw, 0.72rem);
+  font-style: italic;
+  letter-spacing: 0.3em;
+  color: rgba(201,168,76,0.26);
+}
+
+/* Manta container
+   ───────────────
+   viewBox "-100 -60 200 160"
+     width  = 200 units
+     height = 160 units  (from y=-60 to y=+100)
+     aspect = 160/200 = 0.8  →  rendered_height = css_width × 0.8
+   Tail tip at local (0, 100) = bottom-centre of element.
+*/
+.manta-container {
+  position: relative;
+  width: min(65vw, 700px);
+  flex-shrink: 0;
+  z-index: 8;   /* establishes stacking context for children */
+}
+
+/* Body SVG: behind title text */
+#manta-base {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  position: relative;
+  z-index: 8;
+}
+
+/* Wings SVG: absolutely over the container, in front of title */
+#manta-wings {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  z-index: 12;
+  pointer-events: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SPINE SVG
+   position: absolute inside #hero (which is position:relative).
+   top is set by JS = mantaContainer.offsetTop + offsetHeight.
+   left: 50% + translateX(-50%) = centred in #hero = viewport centre.
+   Height: 500vh so the path is never clipped during the journey.
+   z-index: 4 — behind manta body (8) and wings (12).
+   ══════════════════════════════════════════════════════════════ */
+#spine-svg {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  /* top set by JS */
+  width: min(65vw, 700px);
+  /* 1600vh matches viewBox height 16000 — 1 SVG unit ≈ 1 CSS vh unit.
+     overflow:visible is a final safety net. */
+  height: 1600vh;
+  overflow: visible;
+  z-index: 4;
+  pointer-events: none;
+}
+
+#guide-path {
+  fill: none;
+  stroke: none;
+  opacity: 0;
+}
+#draw-path {
+  fill: none;
+  stroke: url(#goldGrad);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  filter: url(#pathGlow);
+  will-change: stroke-dashoffset;
+}
+/* Volumetric trailing glow — heavy bloom, low opacity, behind the core line.
+   Tracks the leading edge via JS-synced strokeDashoffset. */
+#draw-path-glow {
+  fill: none;
+  stroke: url(#goldGrad);
+  stroke-width: 6;
+  stroke-linecap: round;
+  opacity: 0.15;
+  filter: url(#pathGlowSoft);
+  will-change: stroke-dashoffset;
+}
+/* Textured dashed echo — always visible at low opacity, suggests
+   biological/woven material parallel to the main stroke. */
+#draw-path-texture {
+  fill: none;
+  stroke: var(--gold-light);
+  stroke-width: 1;
+  stroke-linecap: butt;
+  stroke-dasharray: 4 12;
+  opacity: 0.18;
+}
+
+/* Vertebra accent nodes — geometric clusters pinned along the path.
+   Default state (before scroll reaches them) is invisible; JS animates
+   each node in as the leading edge passes. */
+.v-node {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  filter: url(#nodeGlow);
+}
+
+/* Scroll hint */
+.scroll-hint {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  transition: opacity 1.2s ease;
+}
+.scroll-hint.gone { opacity: 0; pointer-events: none; }
+.scroll-hint span {
+  font-family: 'Cinzel', serif;
+  font-size: 0.48rem;
+  letter-spacing: 0.55em;
+  color: rgba(201,168,76,0.28);
+  text-transform: uppercase;
+}
+.scroll-hint-line {
+  width: 1px;
+  height: 36px;
+  background: linear-gradient(to bottom, rgba(201,168,76,0.4), transparent);
+  animation: linePulse 2.2s ease-in-out infinite;
+}
+@keyframes linePulse {
+  0%,100% { opacity: 0.3; }
+  50%     { opacity: 0.88; }
+}
+
+/* Depth UI */
+.depth-ui {
+  position: fixed;
+  bottom: 1.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 600;
+  pointer-events: none;
+}
+.depth-label {
+  font-family: 'Cinzel', serif;
+  font-size: 0.5rem;
+  letter-spacing: 0.45em;
+  color: rgba(201,168,76,0.25);
+  text-transform: uppercase;
+  margin-bottom: 0.15rem;
+}
+.depth-value {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1rem;
+  font-weight: 300;
+  font-style: italic;
+  letter-spacing: 0.18em;
+  color: rgba(201,168,76,0.45);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BRANDING REVEAL — pure CSS text, fades in at 6000m
+   ══════════════════════════════════════════════════════════════ */
+#branding-reveal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  z-index: 560;  /* above milestones (550) so branding always wins */
+  padding-top: 100px;  /* push text below depth labels */
+  pointer-events: none;
+  opacity: 0;
+  background: transparent;
+}
+
+#br-logomark {
+  width: clamp(80px, 12vw, 140px);
+  height: auto;
+  filter: drop-shadow(0 0 24px rgba(212, 175, 55, 0.5))
+          drop-shadow(0 0 48px rgba(212, 175, 55, 0.25));
+  margin-bottom: 0.5rem;
+}
+
+#br-logo-text {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(1.8rem, 4vw, 3.2rem);
+  font-weight: 300;
+  letter-spacing: 0.7em;
+  text-transform: uppercase;
+  color: #ffffff;
+  text-shadow:
+    0 0 30px rgba(201,168,76,0.9),
+    0 0 70px rgba(201,168,76,0.5),
+    0 0 140px rgba(201,168,76,0.25);
+}
+
+#branding-reveal .br-sub {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: clamp(0.75rem, 1.4vw, 1rem);
+  font-style: italic;
+  letter-spacing: 0.45em;
+  color: rgba(201,168,76,0.38);
+  text-align: center;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DEPTH MILESTONES — fixed labels, left-aligned
+   Reference: airy typography, far-left placement, zone-specific
+   color tinting (twilight gets a violet cast).
+   ══════════════════════════════════════════════════════════════ */
+.milestone {
+  position: fixed;
+  left: clamp(1.2rem, 3.5vw, 2.6rem);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 550;
+  pointer-events: none;
+  opacity: 0;            /* GSAP animates each one in */
+}
+.milestone .ms-depth {
+  font-family: 'Cinzel', serif;
+  font-size: 0.46rem;
+  letter-spacing: 0.5em;
+  color: rgba(220, 220, 230, 0.45);
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+  font-weight: 300;
+}
+.milestone .ms-name {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.62rem, 1vw, 0.78rem);
+  font-weight: 300;
+  font-style: normal;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: rgba(220, 220, 230, 0.55);
+}
+.milestone .ms-rule {
+  width: 22px;
+  height: 1px;
+  background: rgba(220, 220, 230, 0.22);
+  margin-top: 0.5rem;
+}
+
+/* Zone-specific tinting */
+#ms-twilight .ms-name { color: rgba(178, 142, 220, 0.72); }   /* violet */
+#ms-twilight .ms-depth { color: rgba(178, 142, 220, 0.50); }
+#ms-twilight .ms-rule { background: rgba(178, 142, 220, 0.32); }
+
+#ms-hadal .ms-name { color: rgba(220, 220, 230, 0.70); }      /* slightly brighter */
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — screens < 768px
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  #br-logo-text {
+    font-size: clamp(1.1rem, 5.5vw, 1.8rem);
+    letter-spacing: 0.35em;
+  }
+  .manta-container {
+    width: min(85vw, 500px);
+  }
+  #spine-svg {
+    width: min(85vw, 500px);
+  }
+  .depth-value {
+    font-size: 0.85rem;
+  }
+  .milestone {
+    left: 0.8rem;
+  }
+
+  #branding-reveal {
+    padding-top: 60px;  /* less padding on mobile */
+    gap: 30px;          /* breathing room between icon slot and text */
+  }
+
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BACK TO TOP — fades in alongside branding reveal at 6000m
+   ══════════════════════════════════════════════════════════════ */
+#back-to-top {
+  position: fixed;
+  bottom: 6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 551;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.25);
+  color: rgba(255,255,255,0.6);
+  font-family: 'Cinzel', serif;
+  font-size: 0.42rem;
+  font-weight: 300;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  padding: 0.7rem 1.6rem;
+  text-decoration: none;
+  transition: border-color 0.4s ease, color 0.4s ease, box-shadow 0.4s ease;
+}
+#back-to-top:hover {
+  border-color: rgba(201,168,76,0.7);
+  color: rgba(201,168,76,0.9);
+  box-shadow: 0 0 18px rgba(201,168,76,0.2);
+}
+
+/* Hadopelagic milestone sits higher to avoid overlapping branding reveal */
+#ms-hadal {
+  top: 35%;
+  transform: none;  /* override the translateY(-50%) from .milestone */
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VERTEBRA SYSTEM — shared styles for all 500m content panels
+   ══════════════════════════════════════════════════════════════ */
+
+/* Spine glow dot — one per active vertebra, JS positions it */
+.v-dot {
+  position: fixed;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d4af37;
+  box-shadow: 0 0 14px 5px rgba(212,175,55,0.65),
+              0 0 30px 8px rgba(212,175,55,0.2);
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Leader line canvas — full viewport, one shared SVG */
+#v-lines-svg {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 15;
+  overflow: visible;
+}
+.v-line {
+  fill: none;
+  stroke: #d4af37;
+  stroke-width: 1.5;
+  opacity: 0;
+  filter: drop-shadow(0 0 5px rgba(212,175,55,0.75));
+  stroke-linecap: round;
+}
+
+/* Content panel */
+.vertebra-panel {
+  position: fixed;
+  /* top set per-tick by JS; left/right set by side classes below */
+  width: clamp(280px, 35vw, 480px);
+  /* opacity/transform owned entirely by GSAP — no CSS transforms here */
+  opacity: 0;
+  visibility: hidden;      /* GSAP autoAlpha manages both */
+  z-index: 1000;
+  pointer-events: none;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+.vertebra-panel.side-right { left: 62%; }
+.vertebra-panel.side-left  { right: 62%; left: auto; }
+
+/* Glassmorphism card — holographic floating panel
+   ────────────────────────────────────────────────
+   Two background layers: dark glass base + faint dot grid.
+   The dot grid uses a radial-gradient tile repeated at 20px
+   intervals — small bright dot at center, transparent everywhere
+   else. Gives a "screen pixels" feel without visual weight. */
+.v-card {
+  position: relative;
+  background:
+    /* Dot grid — 20px tile, single small dot per tile */
+    radial-gradient(
+      circle at center,
+      rgba(212, 175, 55, 0.28) 0px,
+      rgba(212, 175, 55, 0.28) 1px,
+      transparent 1.5px
+    ),
+    /* Glass base */
+    rgba(8, 12, 22, 0.72);
+  background-size: 20px 20px, auto;
+  background-position: 10px 10px, 0 0;
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  padding: 44px 40px 32px;
+  box-shadow:
+    inset 0 0 60px rgba(212, 175, 55, 0.05),
+    inset 0 0 1px rgba(212, 175, 55, 0.4),
+    0 0 80px rgba(0, 0, 0, 0.55),
+    0 0 30px rgba(212, 175, 55, 0.08);
+}
+
+/* L-bracket corners */
+.v-card::before, .v-card::after,
+.v-card .corner-br, .v-card .corner-bl {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border-color: #d4af37;
+  border-style: solid;
+  opacity: 0.85;
+}
+.v-card::before   { top:-1px;    left:-1px;  border-width: 2px 0 0 2px; }
+.v-card::after    { top:-1px;    right:-1px; border-width: 2px 2px 0 0; }
+.v-card .corner-br{ bottom:-1px; right:-1px; border-width: 0 2px 2px 0; }
+.v-card .corner-bl{ bottom:-1px; left:-1px;  border-width: 0 0 2px 2px; }
+
+/* Depth pill — high-contrast tactical tag floating above card.
+   Gold background, black text, square brackets framing the depth.
+   Reads from across the page — meant to be assertive HUD signaling. */
+.v-depth {
+  position: absolute;
+  top: -11px;
+  right: 28px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.5rem;
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  color: #0a0a0a;
+  text-transform: uppercase;
+  display: inline-block;
+  background: linear-gradient(
+    to bottom,
+    #f0d878 0%,
+    #d4af37 50%,
+    #b8942a 100%
+  );
+  border: 1px solid #d4af37;
+  border-radius: 999px;
+  padding: 4px 14px;
+  z-index: 2;
+  box-shadow:
+    0 0 16px rgba(212, 175, 55, 0.5),
+    inset 0 1px 0 rgba(255, 240, 200, 0.6),
+    inset 0 -1px 0 rgba(120, 90, 30, 0.4);
+}
+.v-title {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(1rem, 2vw, 1.7rem);
+  font-weight: 400;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #f5e080;
+  margin-bottom: 1rem;
+  line-height: 1.25;
+}
+.v-body {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(0.5rem, 0.82vw, 0.65rem);
+  font-weight: 300;
+  letter-spacing: 1px;
+  line-height: 1.9;
+  color: rgba(255,255,255,0.68);
+  text-transform: uppercase;
+  margin-bottom: 1.2rem;
+}
+.v-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: 'Cinzel', serif;
+  font-size: 0.48rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(212,175,55,0.75);
+  border: 1px solid rgba(212,175,55,0.35);
+  padding: 7px 16px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 0.3s, color 0.3s;
+}
+.v-cta:hover { border-color: #d4af37; color: #d4af37; }
+.v-badge {
+  position: absolute;
+  bottom: -1px; right: -1px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.4rem;
+  letter-spacing: 0.4em;
+  color: rgba(212,175,55,0.5);
+  border: 1px solid rgba(212,175,55,0.28);
+  border-top: none; border-right: none;
+  padding: 3px 10px;
+  background: rgba(8,10,18,0.92);
+}
+
+@media (max-width: 768px) {
+  .vertebra-panel        { left: 4% !important; right: auto !important;
+                           width: min(90vw, 340px);
+                           transform: translateY(-50%) rotateY(-30deg) !important;
+                           transform-origin: left center !important; }
+  #v-lines-svg, .v-dot   { display: none; }
+}
