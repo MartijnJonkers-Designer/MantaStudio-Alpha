@@ -83,18 +83,18 @@ body {
     radial-gradient(ellipse 80% 60% at 50% 35%, var(--c-bg-3) 0%, var(--c-bg-2) 40%, var(--c-bg-1) 80%);
 }
 
-/* Aurora — the purple/teal bloom you see in the dogstudio reference.
-   Performance: blurred layers are expensive to animate. We use
-   translate3d to force GPU compositing, will-change to lock the layer,
-   and a long 30s cycle so per-frame work stays minimal on mobile. */
+/* Aurora — chromatic-dispersion bloom (cyan + violet via --c-bloom-*).
+   Performance: blurred layers are expensive to animate. translate3d forces
+   GPU compositing, will-change locks the layer, and a long 30s cycle keeps
+   per-frame work minimal on mobile. Saturate amps the chromatic punch. */
 .stage__aurora {
   position: absolute;
   inset: -10%;
   background:
-    radial-gradient(circle at 30% 25%, rgba(74,58,140,.55) 0%, transparent 35%),
-    radial-gradient(circle at 75% 35%, rgba(42,93,122,.55) 0%, transparent 40%),
-    radial-gradient(circle at 60% 55%, rgba(120,80,160,.25) 0%, transparent 45%);
-  filter: blur(40px);
+    radial-gradient(circle at 30% 25%, rgb(from var(--c-bloom-1) r g b / 0.55) 0%, transparent 35%),
+    radial-gradient(circle at 75% 35%, rgb(from var(--c-bloom-2) r g b / 0.55) 0%, transparent 40%),
+    radial-gradient(circle at 60% 55%, rgb(from var(--c-bloom-2) r g b / 0.25) 0%, transparent 45%);
+  filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   opacity: .9;
   will-change: transform;
   transform: translate3d(0, 0, 0);   /* promote to its own layer */
@@ -119,14 +119,20 @@ body {
   z-index: 2;
   will-change: transform;
 }
+/* Manta drop-shadow stack:
+   1. Soft gravity shadow (softened from 0.5 → 0.35 so it doesn't read as cut-out)
+   2. Mint LED halo so the manta feels lit by the bloom, not pasted on top.
+      Halo alpha = --glow-strength * 0.4 (≈ 0.22) — strong enough to read,
+      not so strong that the silhouette dissolves. */
 .stage__manta-placeholder,
 .stage__manta img {
   width: min(120vw, 1500px);
   height: auto;
   max-height: 95vh;
   object-fit: contain;
-  /* Optional: when you swap to the real PNG, try removing or changing this. */
-  filter: drop-shadow(0 30px 80px rgba(0,0,0,0.5));
+  filter:
+    drop-shadow(0 30px 80px rgba(0, 0, 0, 0.35))
+    drop-shadow(var(--glow-radius-lg) rgb(from var(--glow-color) r g b / calc(var(--glow-strength) * 0.4)));
 }
 
 .stage__particles {
@@ -309,6 +315,10 @@ body {
   color: var(--c-ink);
   letter-spacing: .02em;
 }
+/* Reel arrow LED pill:
+   - Mint background carries forward from --c-accent.
+   - Outer box-shadow is the LED bloom (--glow-radius-md @ --glow-strength).
+   - Inset 1px ring uses --glass-border to give the pill a glass edge. */
 .hero__reel-arrow {
   display: inline-flex;
   align-items: center;
@@ -321,6 +331,15 @@ body {
   font-size: 18px;
   line-height: 1;
   padding-bottom: 2px;
+  box-shadow:
+    var(--glow-radius-md) rgb(from var(--glow-color) r g b / var(--glow-strength)),
+    inset 0 0 0 1px var(--glass-border);
+  transition: box-shadow .4s var(--ease);
+}
+.hero__reel:hover .hero__reel-arrow {
+  box-shadow:
+    var(--glow-radius-lg) rgb(from var(--glow-color) r g b / var(--glow-strength)),
+    inset 0 0 0 1px var(--glass-border);
 }
 .hero__reel-text {
   border-bottom: 1px solid var(--c-ink-mute);
@@ -558,7 +577,7 @@ body {
      blur is reduced, and grain shifts on a longer cycle with less opacity. */
   .stage__aurora {
     animation: none;
-    filter: blur(28px);
+    filter: blur(20px) saturate(var(--glass-saturate));
     opacity: .75;
   }
   .stage__grain {
