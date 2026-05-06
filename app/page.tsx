@@ -50,6 +50,83 @@ export default function Home() {
         <HorizontalParallaxGallery items={PROJECTS} />
       </div>
 
+      <section
+        id="approach"
+        className="relative border-t border-white/10 bg-black px-8 py-24 md:px-12 md:py-32"
+      >
+        <div className="mx-auto grid max-w-6xl gap-16 md:grid-cols-12">
+          <div className="md:col-span-4">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/40">
+              Approach
+            </p>
+            <h2 className="mt-6 text-balance text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
+              Built deliberately. Shipped quietly.
+            </h2>
+          </div>
+          <div className="grid gap-10 md:col-span-8 md:grid-cols-3">
+            {[
+              {
+                k: "01",
+                t: "Discover",
+                d: "We start with weeks, not days — sitting with the brief, the audience, and the cultural context before any pixel moves.",
+              },
+              {
+                k: "02",
+                t: "Compose",
+                d: "Type, motion, material. Each decision earns its place. Nothing decorative, nothing accidental.",
+              },
+              {
+                k: "03",
+                t: "Refine",
+                d: "We ship slow on purpose. Every interaction gets the time it needs to feel inevitable.",
+              },
+            ].map((step) => (
+              <div key={step.k} className="flex flex-col gap-3">
+                <span className="text-[10px] uppercase tracking-[0.35em] text-[#7CFFCB]/80">
+                  {step.k}
+                </span>
+                <h3 className="text-xl font-semibold tracking-tight md:text-2xl">
+                  {step.t}
+                </h3>
+                <p className="text-sm leading-relaxed text-white/60">
+                  {step.d}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="studio"
+        className="relative border-t border-white/10 bg-black px-8 py-24 md:px-12 md:py-32"
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-10 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/40">
+              Studio
+            </p>
+            <h2 className="mt-6 text-balance text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
+              A small practice in Amsterdam, working with care across brand, web, and motion.
+            </h2>
+          </div>
+          <dl className="grid grid-cols-2 gap-x-12 gap-y-6 text-sm md:grid-cols-2">
+            <div>
+              <dt className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                Founded
+              </dt>
+              <dd className="mt-2 text-white/85">2026 · Amsterdam</dd>
+            </div>
+            <div>
+              <dt className="text-[10px] uppercase tracking-[0.3em] text-white/40">
+                Practice
+              </dt>
+              <dd className="mt-2 text-white/85">Brand · Web · Motion</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
       <footer
         id="contact"
         className="relative border-t border-white/10 bg-black px-8 py-24 md:px-12 md:py-32"

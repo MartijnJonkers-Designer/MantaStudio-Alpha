@@ -114,47 +114,9 @@ export default function ImmersiveHero({
         }}
       />
 
-      {/* Top-left brand mark */}
-      <header className="relative z-10 flex items-center justify-between p-8 md:p-12">
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ type: "spring", ...SPRING }}
-          className="flex items-center gap-3"
-        >
-          <div
-            className="h-3 w-3 rounded-full"
-            style={{
-              background:
-                "radial-gradient(circle, #7CFFCB 0%, rgba(124,255,203,0) 70%)",
-              boxShadow: "0 0 20px rgba(124,255,203,0.6)",
-            }}
-          />
-          <span className="text-sm font-medium tracking-[0.2em] uppercase text-white/80">
-            MantaStudio
-          </span>
-        </motion.div>
-
-        <motion.nav
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ type: "spring", ...SPRING, delay: 0.05 }}
-          className="hidden md:flex items-center gap-8 text-xs uppercase tracking-[0.25em] text-white/60"
-        >
-          <a href="#work" className="hover:text-white transition-colors">
-            Work
-          </a>
-          <a href="#studio" className="hover:text-white transition-colors">
-            Studio
-          </a>
-          <a href="#contact" className="hover:text-white transition-colors">
-            Contact
-          </a>
-        </motion.nav>
-      </header>
-
-      {/* Headline block — bottom-left to mirror agency framing */}
-      <div className="relative z-10 flex min-h-[calc(100vh-160px)] items-end px-8 md:px-12 pb-16 md:pb-24">
+      {/* Headline block — bottom-left to mirror agency framing.
+          The site-wide LiquidGlassNav owns the top of the viewport now. */}
+      <div className="relative z-10 flex min-h-screen items-end px-8 md:px-12 pb-16 md:pb-24 pt-32 md:pt-36">
         <div className="w-full max-w-6xl">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
