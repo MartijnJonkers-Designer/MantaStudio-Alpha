@@ -1,34 +1,47 @@
 /* ============================================================
-   MANTA WORKS — Editorial landing v2
-   Reference: dogstudio.co mobile composition
-   - Massive Playfair Display headline, stacked left
-   - Headline weaves through manta via z-index layering
-   - Dark cinematic ocean palette with aurora bloom
+   MANTA WORKS — Editorial landing v2 (Liquid Glass refit)
+   - Geist headline, stacked left, weaves through manta via z-index
+   - Neutral near-black ground + chromatic-dispersion bloom
    - Marine snow + film grain on a fixed stage
    ============================================================ */
 
 :root {
-  /* Colour — cinematic ocean */
-  --c-bg-1:     #070d12;   /* near-black abyss */
-  --c-bg-2:     #0d1825;   /* slightly lifted */
-  --c-bg-3:     #1a2638;
-  --c-ink:      #ffffff;
-  --c-ink-soft: #aab1c0;
-  --c-ink-mute: #5d6577;
-  --c-accent:   #ff5e3a;   /* coral red — punctuation only */
-  --c-bloom-1:  #4a3a8c;   /* aurora purple */
-  --c-bloom-2:  #2a5d7a;   /* aurora teal */
+  /* Colour — Liquid Glass (neutral near-black + chromatic bloom) */
+  --c-bg-1:     #05060A;   /* true near-black, no blue cast */
+  --c-bg-2:     #0C0E14;
+  --c-bg-3:     #181B24;
+  --c-ink:      #F5F5F5;   /* off-white — bloom-friendly */
+  --c-ink-soft: #B8BCC8;
+  --c-ink-mute: #6A6E7A;
+  --c-accent:   #7CFFCB;   /* mint — LED bloom + CTAs */
+  --c-bloom-1:  #38BDF8;   /* sky cyan — cool side of dispersion */
+  --c-bloom-2:  #C77DFF;   /* violet — warm side of dispersion */
 
-  /* Type */
-  --f-display: "Playfair Display", "Times New Roman", serif;
-  --f-ui:      "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Type — Geist (canonical MantaStudio system) */
+  --f-display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --f-ui:      "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --f-mono:    "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Glass surface */
+  --glass-tint:     rgba(255, 255, 255, 0.06);
+  --glass-border:   rgba(255, 255, 255, 0.12);
+  --glass-blur:     28px;
+  --glass-saturate: 160%;
+  --glass-noise:    0.025;
+
+  /* LED bloom */
+  --glow-color:      var(--c-accent);
+  --glow-radius-sm:  0 0 18px;
+  --glow-radius-md:  0 0 36px;
+  --glow-radius-lg:  0 0 80px;
+  --glow-strength:   0.55;
 
   /* Layout */
   --pad-x: clamp(20px, 5vw, 64px);
   --maxw:  1480px;
 
   /* Motion */
-  --ease: cubic-bezier(.2,.7,.2,1);
+  --ease: cubic-bezier(.16, .84, .24, 1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
