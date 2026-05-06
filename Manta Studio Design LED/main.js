@@ -1,9 +1,8 @@
 /* ============================================================
-   MAIN — GSAP choreography (Brutalist / High-Precision Tech)
-
-   All entrance reveals: ease "expo.out", duration 0.8 — the snap.
-   Manta tilt: quickTo on rotation, duration 0.5 (tighter than v3).
-   Manta scroll parallax retained; ambient breath REMOVED (no slow drift).
+   MAIN — GSAP choreography (Friedman scroll: clip-path wipe)
+   - Hero: timeline reveals headline lines + sidebar items in sequence
+   - Sections: scroll-triggered clip-path wipe
+   - All reveals: ease "expo.out", duration 0.8
    ============================================================ */
 
 (function () {
@@ -13,64 +12,47 @@
   const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const SNAP_DURATION = 0.8;
   const SNAP_EASE = "expo.out";
+  const REVEALED = "inset(0 0 0 0)";
+  const HIDDEN   = "inset(0 0 100% 0)";
 
-  /* -------- HERO WORD REVEAL --------
-     Single timeline across both <h1>s so the four words read as one
-     synchronised motion. Tight stagger so each starts before the
-     previous lands — high tension, no perceptible gap. */
-  const orderedWords = [
-    ...document.querySelectorAll(".line--we .word"),
-    ...document.querySelectorAll(".line--make .word"),
-    ...document.querySelectorAll(".line--good .word"),
-    ...document.querySelectorAll(".line--shit .word"),
-  ];
+  /* -------- HERO TIMELINE --------
+     Reveal headline lines first (one after another), then the sidebar
+     items below. The clip-path goes from inset(0 0 100% 0) — fully
+     clipped from the bottom (invisible) — to inset(0 0 0 0). */
+  const heroLines = document.querySelectorAll(".hero__headline .line");
+  const heroSidebar = document.querySelectorAll(".hero__sidebar [data-reveal]");
 
-  if (orderedWords.length) {
-    if (prefersReduced) {
-      gsap.set(orderedWords, { y: 0, opacity: 1 });
-    } else {
-      const heroTL = gsap.timeline({ delay: 0.3 });
-      heroTL.set(orderedWords, { yPercent: 110, opacity: 0 });
-      heroTL.to(orderedWords, {
-        yPercent: 0,
-        opacity: 1,
+  if (prefersReduced) {
+    gsap.set([...heroLines, ...heroSidebar], { clipPath: REVEALED });
+  } else if (heroLines.length || heroSidebar.length) {
+    const tl = gsap.timeline({ delay: 0.25 });
+    if (heroLines.length) {
+      tl.set(heroLines, { clipPath: HIDDEN });
+      tl.to(heroLines, {
+        clipPath: REVEALED,
         duration: SNAP_DURATION,
         ease: SNAP_EASE,
-        stagger: { each: 0.06, from: "start" },   /* tighter than v3 */
+        stagger: 0.07,
       });
+    }
+    if (heroSidebar.length) {
+      tl.to(heroSidebar, {
+        clipPath: REVEALED,
+        duration: SNAP_DURATION,
+        ease: SNAP_EASE,
+        stagger: 0.10,
+      }, "-=0.50");                /* overlap with the headline tail */
     }
   }
 
-  /* -------- HERO SHOWREEL CTA -------- */
-  const heroReveals = document.querySelectorAll(".hero [data-reveal]:not(.word)");
-  if (heroReveals.length) {
-    gsap.to(heroReveals, {
-      opacity: 1, y: 0,
-      duration: SNAP_DURATION,
-      ease: SNAP_EASE,
-      stagger: 0.08,
-      delay: 1.0,
-    });
-  }
-
-  /* -------- CORNER MARKERS — slam in around the manta -------- */
-  const markers = document.querySelectorAll(".stage__manta-marker");
-  if (markers.length && !prefersReduced) {
-    gsap.from(markers, {
-      scale: 1.6,
-      opacity: 0,
-      duration: SNAP_DURATION,
-      ease: SNAP_EASE,
-      stagger: 0.05,
-      delay: 0.6,
-      transformOrigin: "center center",
-    });
-  }
-
-  /* -------- SECTION REVEALS -------- */
-  gsap.utils.toArray("section [data-reveal], footer [data-reveal]").forEach((el) => {
+  /* -------- SECTION REVEALS — scroll-triggered clip-path wipe -------- */
+  gsap.utils.toArray("section:not(.hero) [data-reveal], footer [data-reveal]").forEach((el) => {
+    if (prefersReduced) {
+      gsap.set(el, { clipPath: REVEALED });
+      return;
+    }
     gsap.to(el, {
-      opacity: 1, y: 0,
+      clipPath: REVEALED,
       duration: SNAP_DURATION,
       ease: SNAP_EASE,
       scrollTrigger: {
@@ -80,52 +62,6 @@
       },
     });
   });
-
-  /* -------- MANTA SCROLL PARALLAX + TILT --------
-     yPercent (parallax) and rotation (tilt) compose as separate transform
-     components; they don't fight each other. Ambient breath REMOVED —
-     the brief calls for snap, not slow drifting. */
-  const manta = document.getElementById("manta");
-  if (manta && !prefersReduced) {
-    // Slow scroll-tied parallax (this one stays smooth via scrub — it's
-    // a scroll-coupled effect, not an entrance animation).
-    gsap.to(manta, {
-      yPercent: 14,
-      scale: 1.04,
-      ease: "none",
-      scrollTrigger: {
-        trigger: document.body,
-        start: "top top",
-        end: "bottom bottom",
-        scrub: 1.0,
-      },
-    });
-
-    // Tilt — cursor x maps to ±5deg lean. Tighter quickTo (0.5) for
-    // the high-precision-tool feel.
-    const rotateTo = gsap.quickTo(manta, "rotation", {
-      duration: 0.5,
-      ease: "power3.out",
-    });
-    window.addEventListener("pointermove", (e) => {
-      rotateTo(((e.clientX / window.innerWidth) - 0.5) * 10);
-    }, { passive: true });
-  }
-
-  /* -------- HERO HEADLINE COUNTER-PARALLAX -------- */
-  const headlines = document.querySelectorAll(".hero__headline");
-  if (headlines.length && !prefersReduced) {
-    gsap.to(headlines, {
-      yPercent: -25,
-      ease: "none",
-      scrollTrigger: {
-        trigger: ".hero",
-        start: "top top",
-        end: "bottom top",
-        scrub: 1,
-      },
-    });
-  }
 
   /* -------- FONT-LOAD REFRESH -------- */
   if (document.fonts && document.fonts.ready) {
