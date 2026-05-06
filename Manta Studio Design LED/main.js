@@ -1,20 +1,25 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.2 (liquid mercury surface)
+   AUROS — Liquid Engine v0.3 (Deep Sea Bioluminescence)
 
-   Step 2: full-screen GLSL fragment shader rendering a domain-warped
-   fbm surface. High-contrast (deep black valleys, sharp bright peaks)
-   with viscous mouse-driven displacement that settles over ~1.5s.
+   Theme on top of the v0.2 liquid engine: mint highlights on midnight
+   navy, with a post-processing bloom halo around the bright peaks.
+   Movement slowed and weighted for the "heavy" feel.
 
-   Architecture:
-     - OrthographicCamera + PlaneGeometry(2, 2) full-screen quad
-     - Vertex shader bypasses camera transforms (position is NDC directly)
-     - Fragment shader: simplex noise -> fbm -> domain warp -> contrast
-     - Mouse: JS-side lerp + exponential energy decay (tau = 0.6s)
-     - Single draw call per frame
+   Pipeline:
+     ShaderMaterial (full-screen fbm) -> RenderPass
+          |
+          v
+     UnrealBloomPass (strength 0.7, radius 0.6, threshold 0.35)
+          |
+          v
+     OutputPass (linear -> sRGB for display)
    ============================================================ */
 
-/* "three" resolves via the importmap declared in Index.html. */
 import * as THREE from "three";
+import { EffectComposer }    from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass }        from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass }   from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
@@ -25,9 +30,6 @@ import * as THREE from "three";
 
   /* -------- Scene + camera + renderer -------- */
   const scene = new THREE.Scene();
-
-  /* Camera transform is bypassed in the vertex shader, so its values don't
-     matter — Three.js just needs a camera object to call .render() with. */
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
   const renderer = new THREE.WebGLRenderer({
@@ -38,6 +40,7 @@ import * as THREE from "three";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setClearColor(0x010816, 1);   // midnight navy
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -47,9 +50,7 @@ import * as THREE from "three";
     uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
   };
 
-  /* -------- Vertex shader: pass UV through, position as NDC --------
-     PlaneGeometry(2, 2) has vertex positions in [-1, 1] which is exactly
-     clip space, so we skip projectionMatrix * modelViewMatrix entirely. */
+  /* -------- Shaders -------- */
   const vertexShader = /* glsl */ `
     varying vec2 vUv;
     void main() {
@@ -58,7 +59,6 @@ import * as THREE from "three";
     }
   `;
 
-  /* -------- Fragment shader: liquid mercury -------- */
   const fragmentShader = /* glsl */ `
     uniform float uTime;
     uniform vec2  uMouse;
@@ -66,8 +66,7 @@ import * as THREE from "three";
     uniform vec2  uResolution;
     varying vec2  vUv;
 
-    /* Stefan Gustavson 2D simplex noise (public domain).
-       Returns a value approximately in [-1, 1]. */
+    /* Stefan Gustavson 2D simplex noise (public domain). */
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
     vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
     vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -98,8 +97,6 @@ import * as THREE from "three";
       return 130.0 * dot(m, g);
     }
 
-    /* Fractional Brownian Motion: stack 5 octaves of simplex with each
-       octave doubling frequency and halving amplitude. Output ~[-1, 1]. */
     float fbm(vec2 p) {
       float v = 0.0;
       float a = 0.5;
@@ -111,24 +108,23 @@ import * as THREE from "three";
       return v;
     }
 
+    /* Palette — normalised hex.
+       cValley = #010816, cPeak = #7CFFCB. */
+    const vec3 cValley = vec3(0.0039, 0.0314, 0.0863);
+    const vec3 cPeak   = vec3(0.4863, 1.0000, 0.7961);
+
     void main() {
-      /* Aspect-correct UV so circular ripples stay round on wide screens. */
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
       vec2 p = (vUv - 0.5) * aspect;
 
-      /* Mouse ripple wake: radial outward push from smoothed cursor.
-         JS feeds uDisplace as an exponentially-decaying energy value
-         driven by mouse speed, so this push fades over ~1.5s after motion. */
+      /* Mouse ripple wake. */
       vec2 mp = (uMouse - 0.5) * aspect;
       vec2 toM = p - mp;
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* Domain-warped fbm — the viscous flow.
-         We sample fbm twice to get a (warpX, warpY) vector, then use that
-         vector to offset the input to a third fbm call. The surface bends
-         through itself instead of being a flat noise field. */
-      float t = uTime * 0.10;
+      /* Slower flow than v0.2 — 0.06 instead of 0.10. */
+      float t = uTime * 0.06;
       vec2 q = p * 1.6 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
@@ -137,14 +133,15 @@ import * as THREE from "three";
       vec2 q2 = q + warp * 0.55;
       float v = fbm(q2 + vec2(t * 0.5));
 
-      /* High-contrast finish: deep black valleys, sharp bright peaks.
-         The smoothstep narrows the bright band; pow softens its edge
-         just enough to read as light reflecting on liquid, not a hard mask. */
+      /* High-contrast finish: deep valleys, sharp bright peaks. */
       v = v * 0.5 + 0.5;
       v = smoothstep(0.55, 0.92, v);
       v = pow(v, 0.85);
 
-      gl_FragColor = vec4(vec3(v), 1.0);
+      /* Composite into the bioluminescent palette. */
+      vec3 col = mix(cValley, cPeak, v);
+
+      gl_FragColor = vec4(col, 1.0);
     }
   `;
 
@@ -160,11 +157,27 @@ import * as THREE from "three";
   const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);
 
-  /* -------- Mouse tracking --------
-     mouseTarget is the raw cursor position (0..1, y-flipped to GL space).
-     mouseSmooth lerps toward target with factor 0.12.
-     displaceEnergy accumulates per-frame speed * 25, capped at 1.5,
-     and decays exponentially with tau = 0.6s. Settles in ~1.5-2s. */
+  /* -------- Post-processing pipeline --------
+     RenderPass paints the shader to an RT in linear space, UnrealBloomPass
+     extracts and blurs the brightest pixels (only mint peaks pass the
+     0.35 luminance threshold), OutputPass converts linear back to sRGB. */
+  const composer = new EffectComposer(renderer);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(window.innerWidth, window.innerHeight);
+
+  composer.addPass(new RenderPass(scene, camera));
+
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.70,    // strength    — moderate intensity
+    0.60,    // radius      — soft spread
+    0.35     // threshold   — only bright peaks bloom
+  );
+  composer.addPass(bloomPass);
+
+  composer.addPass(new OutputPass());
+
+  /* -------- Mouse tracking -------- */
   const mouseTarget = { x: 0.5, y: 0.5 };
   const mouseSmooth = { x: 0.5, y: 0.5 };
   const mousePrev   = { x: 0.5, y: 0.5 };
@@ -172,20 +185,19 @@ import * as THREE from "three";
 
   window.addEventListener("pointermove", (e) => {
     mouseTarget.x = e.clientX / window.innerWidth;
-    mouseTarget.y = 1.0 - e.clientY / window.innerHeight;   // GL y-up
+    mouseTarget.y = 1.0 - e.clientY / window.innerHeight;
   }, { passive: true });
 
   window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
+    composer.setSize(window.innerWidth, window.innerHeight);
     uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
   });
 
-  /* -------- Tick loop --------
-     dt-based exponential decay so settle time is frame-rate independent.
-     Vector2 uniforms reused via .set() to avoid allocation churn. */
-  const TAU       = 0.6;     // displacement decay time-constant (s)
-  const FOLLOW    = 0.12;    // mouse smoothing lerp factor
-  const ENERGY_K  = 25.0;    // mouse-speed -> energy multiplier
+  /* -------- Tick — slower flow, heavier settle -------- */
+  const TAU        = 0.85;   // displacement decay tau (was 0.60) — ~2.5s settle
+  const FOLLOW     = 0.10;   // mouse smoothing      (was 0.12)
+  const ENERGY_K   = 20.0;   // speed -> energy      (was 25)
   const ENERGY_MAX = 1.5;
 
   let lastT = 0;
@@ -194,11 +206,9 @@ import * as THREE from "three";
     const dt   = lastT === 0 ? 0.016 : Math.min((tMs - lastT) * 0.001, 0.05);
     lastT = tMs;
 
-    /* Smooth-follow cursor */
     mouseSmooth.x += (mouseTarget.x - mouseSmooth.x) * FOLLOW;
     mouseSmooth.y += (mouseTarget.y - mouseSmooth.y) * FOLLOW;
 
-    /* Velocity injection + exponential decay */
     const dx = mouseTarget.x - mousePrev.x;
     const dy = mouseTarget.y - mousePrev.y;
     const speed = Math.sqrt(dx * dx + dy * dy);
@@ -208,16 +218,15 @@ import * as THREE from "three";
     mousePrev.x = mouseTarget.x;
     mousePrev.y = mouseTarget.y;
 
-    /* Push uniforms */
     uniforms.uTime.value     = tSec;
     uniforms.uMouse.value.set(mouseSmooth.x, mouseSmooth.y);
     uniforms.uDisplace.value = displaceEnergy;
 
-    renderer.render(scene, camera);
+    composer.render();
     requestAnimationFrame(tick);
   }
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.2 — fbm shader online · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.3 — bioluminescence (mint on navy) · Three.js", THREE.REVISION);
 })();

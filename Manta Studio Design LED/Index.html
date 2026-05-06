@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#010816" />
   <title>Auros — Liquid Engine</title>
   <meta name="description" content="Auros: a liquid rendering engine." />
 
@@ -16,21 +16,25 @@
 
   <link rel="stylesheet" href="Styles.css" />
 
-  <!-- v0.2: headline blends against the liquid surface via difference,
-       so the shader's bright highlights invert the letterforms they
-       pass through. White text + per-channel subtraction = liquid
-       warping through the type. -->
+  <!-- v0.3 bioluminescence: crisp off-white text on top of the liquid.
+       mix-blend-mode was dropped — against navy + mint, the difference
+       blend produced cream and burgundy instead of "crisp #E0E0E0".
+       The halo now comes from the bloom around the bright mint peaks,
+       not from blend-mode math. -->
   <style>
-    .headline { mix-blend-mode: difference; }
+    .headline {
+      color: #E0E0E0;
+    }
   </style>
 
-  <!-- Import map: lets main.js import "three" as a bare specifier
-       (resolves to the CDN URL below). 2026-standard ESM approach;
-       pinning lives here so version bumps stay in one place. -->
+  <!-- Import map: "three" + the addons namespace for postprocessing modules.
+       Both pinned to the same Three.js version so EffectComposer / passes
+       share the core's internals. -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.170.0/build/three.module.js"
+      "three":         "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
     }
   }
   </script>
@@ -40,10 +44,10 @@
   <!-- Three.js render target. Sits behind the headline (z-index 0). -->
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
 
-  <!-- Headline overlay. Z-index 1, pointer-events disabled, blended with difference. -->
+  <!-- Headline overlay. Z-index 1, pointer-events disabled. -->
   <h1 class="headline">WE MOVE THE DEEP</h1>
 
-  <!-- main.js is an ES module — Three.js resolved via the importmap above. -->
+  <!-- main.js is an ES module — Three.js + addons resolved via the importmap above. -->
   <script type="module" src="main.js"></script>
 </body>
 </html>
