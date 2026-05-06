@@ -1,19 +1,19 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.7 (Integrated brand shader)
+   AUROS — Liquid Engine v0.9 (Real brand asset, luma-masked)
 
-   The MantaWorks manta silhouette is baked into the same fragment
-   shader as the fbm liquid surface. The logo is sampled at the same
-   ripple-displaced UV as the rest of the field, so mouse motion
-   physically warps the brand mark instead of just the water around it.
+   The MantaWorks logo is now loaded from manta-logo.svg (the real
+   brand asset) instead of being procedurally drawn. Inside the
+   shader, we luminance-mask the texture so only the gold pixels
+   contribute — the navy background of the source image is rejected
+   by the smoothstep gate, leaving a floating silhouette.
 
-   buildLogoTexture() draws an APPROXIMATE manta silhouette into a
-   1024x512 canvas (three overlapping blurred ellipses: main body,
-   right tail, left wing sweep). The trace is hand-tuned from the
-   reference image — not pixel-perfect to the brand. Swap the canvas
-   drawing for an SVG path / rendered image when the real asset is
-   available; the rest of the integration architecture stays the same.
+   Inside the silhouette we apply a brushed-metal shimmer (high-freq
+   FBM modulating brightness ±15%) so the gold reads as a metallic
+   surface rather than flat fill. The same mouse-ripple displacement
+   that warps the surrounding liquid is applied to the logo's sample
+   coordinates, so ripples physically bend the silhouette.
 
-   Pipeline unchanged from v0.3-v0.6:
+   Pipeline unchanged from v0.3-v0.7:
      ShaderMaterial -> RenderPass -> UnrealBloomPass -> OutputPass
    ============================================================ */
 
@@ -30,60 +30,6 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     return;
   }
 
-  /* -------- Logo texture: procedural canvas trace --------
-     Three overlapping blurred ellipses approximating the manta wing
-     silhouette from the brand image. Drawn into a 1024x512 (2:1) canvas,
-     wrapped to ClampToEdge so out-of-region samples return black. */
-  function buildLogoTexture() {
-    const c = document.createElement("canvas");
-    c.width = 1024; c.height = 512;
-    const g = c.getContext("2d");
-
-    g.fillStyle = "#000000";
-    g.fillRect(0, 0, 1024, 512);
-
-    g.fillStyle = "#FFFFFF";
-    g.filter = "blur(8px)";
-
-    // Main wing body — wide swept ellipse, slightly tilted
-    g.save();
-    g.translate(450, 256);
-    g.rotate(-0.06);
-    g.scale(1.05, 0.40);
-    g.beginPath();
-    g.arc(0, 0, 380, 0, Math.PI * 2);
-    g.fill();
-    g.restore();
-
-    // Right tail extension — narrower, angled up-right
-    g.save();
-    g.translate(820, 230);
-    g.rotate(0.30);
-    g.scale(1.30, 0.25);
-    g.beginPath();
-    g.arc(0, 0, 130, 0, Math.PI * 2);
-    g.fill();
-    g.restore();
-
-    // Left wing extension — long sweep, angled down-left
-    g.save();
-    g.translate(180, 240);
-    g.rotate(-0.25);
-    g.scale(1.50, 0.30);
-    g.beginPath();
-    g.arc(0, 0, 200, 0, Math.PI * 2);
-    g.fill();
-    g.restore();
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.needsUpdate = true;
-    return tex;
-  }
-
   /* -------- Scene + camera + renderer -------- */
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -96,7 +42,17 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x01050F, 1);   // deep midnight navy
+  renderer.setClearColor(0x01050F, 1);
+
+  /* -------- Placeholder texture --------
+     Until the SVG loads, sample a 1×1 black pixel so the luminance
+     mask returns 0 everywhere and nothing renders in the logo region. */
+  const placeholderTex = new THREE.DataTexture(
+    new Uint8Array([0, 0, 0, 255]),
+    1, 1,
+    THREE.RGBAFormat
+  );
+  placeholderTex.needsUpdate = true;
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -104,8 +60,31 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uMouse:      { value: new THREE.Vector2(0.5, 0.5) },
     uDisplace:   { value: 0 },
     uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-    uLogo:       { value: buildLogoTexture() },
+    uLogo:       { value: placeholderTex },
+    uLogoReady:  { value: 0.0 },   // 0 while loading, 1 once swapped
   };
+
+  /* -------- Load the real brand asset --------
+     manta-logo.svg ships in the same folder. SVG content is a base64-
+     embedded raster (1448×1086) so the browser rasterizes it via the
+     <img> path inside TextureLoader. Same-origin = no CORS issues. */
+  const loader = new THREE.TextureLoader();
+  loader.load(
+    "./manta-logo.svg",
+    (texture) => {
+      texture.wrapS     = THREE.ClampToEdgeWrapping;
+      texture.wrapT     = THREE.ClampToEdgeWrapping;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.needsUpdate = true;
+      uniforms.uLogo.value      = texture;
+      uniforms.uLogoReady.value = 1.0;
+      console.log("[Auros] Logo loaded:", texture.image.width, "×", texture.image.height);
+    },
+    undefined,
+    (err) => console.error("[Auros] Logo load failed:", err)
+  );
 
   /* -------- Shaders -------- */
   const vertexShader = /* glsl */ `
@@ -122,6 +101,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uniform float       uDisplace;
     uniform vec2        uResolution;
     uniform sampler2D   uLogo;
+    uniform float       uLogoReady;
     varying vec2        vUv;
 
     /* Stefan Gustavson 2D simplex noise (public domain). */
@@ -167,22 +147,24 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     }
 
     /* Brand palette.
-       cValley = #01050F (deep midnight navy)
-       cPeak   = #D4AF37 (muted gold) */
+       cValley = #01050F (deep midnight navy, the page ground)
+       cPeak   = #D4AF37 (muted metallic gold) */
     const vec3 cValley = vec3(0.0039, 0.0196, 0.0588);
     const vec3 cPeak   = vec3(0.8314, 0.6863, 0.2157);
 
     /* Logo footprint within aspect-corrected viewport.
-       Texture is 2:1; we stretch p by these factors so the logo
-       fits cleanly into the central 70% width region.
-       Slight upward offset so the logo sits above the wordmark. */
-    const vec2  LOGO_SCALE  = vec2(0.70, 0.35);
-    const float LOGO_OFFSET = -0.12;       // shift logo UP toward upper half
+       Source SVG is 1448×1086 ≈ 4:3, so logo height = width / 1.333.
+       Slight upward offset keeps the silhouette above the bottom wordmark. */
+    const vec2  LOGO_SCALE  = vec2(0.80, 0.60);
+    const float LOGO_OFFSET = -0.10;
+
+    /* rec709 luminance for the mask. */
+    const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
     void main() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
       vec2 p = (vUv - 0.5) * aspect;
-      p.y -= LOGO_OFFSET;                  // move our origin so 0,0 is the logo center
+      p.y -= LOGO_OFFSET;
 
       /* Mouse ripple wake. */
       vec2 mp = (uMouse - 0.5) * aspect;
@@ -191,9 +173,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* Ambient warp — tiny noise field that lets the surface (and the logo)
-         drift gently even when the cursor is still. Scaled down so it
-         doesn't compete with the mouse wake. */
+      /* Ambient warp — gentle drift even when the cursor is still. */
       float t = uTime * 0.04;
       vec2 ambientWarp = vec2(
         fbm(p * 1.4 + vec2(t * 0.7, 0.0)),
@@ -202,22 +182,30 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
       vec2 totalWarp = ripple + ambientWarp;
 
-      /* ---- Logo sample (warped UV) ----
-         The same totalWarp that distorts the fbm field also distorts
-         the logo lookup, so ripples physically bend the silhouette. */
+      /* ---- Luminance-masked logo sample ----
+         Sample the brand asset at the warped UV. Compute rec709 luminance,
+         then smoothstep(0.4, 0.6) gates it: navy bg (~0.04 lum) is rejected,
+         gold pixels (~0.5–0.95 lum) pass through. The smooth band feathers
+         the silhouette edge so it integrates with the surrounding liquid
+         instead of cutting hard. */
       vec2 logoP  = p - totalWarp;
       vec2 logoUv = logoP / LOGO_SCALE + 0.5;
-      float logoMaskRaw = texture2D(uLogo, logoUv).r;
-      /* Soft falloff so the silhouette feathers into the surrounding liquid. */
-      float logoMask = smoothstep(0.15, 0.65, logoMaskRaw);
+      vec3 logoSample = texture2D(uLogo, logoUv).rgb;
+      float lum  = dot(logoSample, LUMA);
+      float mask = smoothstep(0.40, 0.60, lum) * uLogoReady;
 
-      /* Molten surface: high-frequency fbm modulates the logo brightness
-         so it doesn't read as a flat gold patch. */
-      float surface = fbm(p * 4.5 + totalWarp + vec2(t * 1.3));
-      surface = surface * 0.5 + 0.5;
-      float logoMolten = logoMask * mix(0.65, 1.0, surface);
+      /* ---- Brushed-metal shimmer ----
+         High-frequency FBM modulates the gold's brightness ±15%, so the
+         silhouette interior reads as brushed/shimmering metal instead of
+         a flat fill. The shimmer drifts with totalWarp so ripples stretch
+         the metallic grain too. */
+      float shimmer = fbm(p * 8.0 + totalWarp * 4.0 + vec2(t * 1.2));
+      shimmer = shimmer * 0.5 + 0.5;
+      vec3 metallicGold = cPeak * mix(0.85, 1.15, shimmer);
 
-      /* ---- Background fbm peaks (v0.6 math, unchanged) ---- */
+      /* ---- Background fbm peaks (ambient liquid texture) ----
+         Faint scattered gold peaks across the rest of the field so the
+         logo sits 'within' the water rather than floating in vacuum. */
       vec2 q = p * 2.0 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
@@ -229,11 +217,15 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       vBg = smoothstep(0.68, 0.92, vBg);
       vBg = pow(vBg, 1.3);
 
-      /* Combine: logo dominates inside its region; ambient peaks scatter
-         elsewhere at reduced intensity (the brand mark is the focal point). */
-      float v = max(logoMolten, vBg * 0.55);
-
-      vec3 col = mix(cValley, cPeak, v);
+      /* ---- Composite ----
+         Two layered surfaces, blended by the luminance mask:
+           - logoCol:    shimmering gold (where mask is high)
+           - ambientCol: faint scattered peaks (everywhere else)
+         The navy bg of the source SVG never contributes — only its
+         luminance does, which becomes the mask. */
+      vec3 logoCol    = mix(cValley, metallicGold,  mask);
+      vec3 ambientCol = mix(cValley, cPeak,         vBg * 0.40);
+      vec3 col        = mix(ambientCol, logoCol,    mask);
 
       gl_FragColor = vec4(col, 1.0);
     }
@@ -262,7 +254,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     0.10,    // strength
     0.60,    // radius
-    0.35     // threshold (only gold passes; navy bg is far below)
+    0.35     // threshold
   );
   composer.addPass(bloomPass);
 
@@ -319,5 +311,5 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.7 — integrated brand shader · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.9 — real brand asset, luma-masked · Three.js", THREE.REVISION);
 })();

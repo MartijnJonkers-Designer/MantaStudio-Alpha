@@ -16,8 +16,8 @@
 
   <link rel="stylesheet" href="Styles.css" />
 
-  <!-- v0.8: wordmark removed. Only the shader-rendered brand mark and
-       the four corner HUDs remain. -->
+  <!-- v0.9: real brand asset loaded via TextureLoader, luminance-masked
+       in the shader. Wordmark MANTAWORKS pinned at the bottom. -->
   <style>
     /* Corner HUD readouts — gold technical markers in the four corners. */
     .hud {
@@ -38,6 +38,24 @@
     .hud--br { bottom: 24px; right: 24px; text-align: right; }
     .hud > span { display: block; }
     .hud__mute { color: #6A6E7A; }
+
+    /* Wordmark — MANTA in silver, WORKS in gold, anchored at the bottom. */
+    .wordmark {
+      position: fixed;
+      bottom: 8vh;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2;
+      font-family: "Geist Mono", ui-monospace, monospace;
+      font-weight: 500;
+      font-size: clamp(16px, 1.8vw, 28px);
+      letter-spacing: 0.42em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .wordmark__silver { color: #C0C0C0; }
+    .wordmark__gold   { color: #D4AF37; }
   </style>
 
   <script type="importmap">
@@ -53,10 +71,15 @@
 
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
 
+  <!-- Wordmark below the shader-rendered brand mark. -->
+  <div class="wordmark" aria-hidden="true">
+    <span class="wordmark__silver">MANTA</span><span class="wordmark__gold">WORKS</span>
+  </div>
+
   <!-- Corner technical HUDs — gold instrument readouts. -->
   <aside class="hud hud--tl" aria-hidden="true">
     <span><span class="hud__mute">SYS</span> AUROS</span>
-    <span><span class="hud__mute">VER</span> 0.8 / GLD</span>
+    <span><span class="hud__mute">VER</span> 0.9 / GLD</span>
   </aside>
   <aside class="hud hud--tr" aria-hidden="true">
     <span><span class="hud__mute">ENT</span> MANTA</span>
@@ -68,7 +91,7 @@
   </aside>
   <aside class="hud hud--br" aria-hidden="true">
     <span><span class="hud__mute">EST</span> MMXXVI</span>
-    <span><span class="hud__mute">SIG</span> AUR.8</span>
+    <span><span class="hud__mute">SIG</span> AUR.9</span>
   </aside>
 
   <script type="module" src="main.js"></script>
