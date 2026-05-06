@@ -1,18 +1,13 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.3 (Deep Sea Bioluminescence)
+   AUROS — Liquid Engine v0.4 (Obsidian & Ember)
 
-   Theme on top of the v0.2 liquid engine: mint highlights on midnight
-   navy, with a post-processing bloom halo around the bright peaks.
-   Movement slowed and weighted for the "heavy" feel.
+   Industrial ember theme on top of the v0.2/v0.3 liquid engine.
+   Safety orange highlights on carbon black, with a very faint warm
+   bloom shimmer. Movement weighted heavier than v0.3 — closer to
+   thick oil than to water.
 
-   Pipeline:
-     ShaderMaterial (full-screen fbm) -> RenderPass
-          |
-          v
-     UnrealBloomPass (strength 0.7, radius 0.6, threshold 0.35)
-          |
-          v
-     OutputPass (linear -> sRGB for display)
+   Pipeline unchanged from v0.3:
+     ShaderMaterial (fbm) -> RenderPass -> UnrealBloomPass -> OutputPass
    ============================================================ */
 
 import * as THREE from "three";
@@ -40,7 +35,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x010816, 1);   // midnight navy
+  renderer.setClearColor(0x050505, 1);   // carbon black
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -109,9 +104,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     }
 
     /* Palette — normalised hex.
-       cValley = #010816, cPeak = #7CFFCB. */
-    const vec3 cValley = vec3(0.0039, 0.0314, 0.0863);
-    const vec3 cPeak   = vec3(0.4863, 1.0000, 0.7961);
+       cValley = #050505,  cPeak = #FF4D00. */
+    const vec3 cValley = vec3(0.0196, 0.0196, 0.0196);
+    const vec3 cPeak   = vec3(1.0000, 0.3020, 0.0000);
 
     void main() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
@@ -123,8 +118,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* Slower flow than v0.2 — 0.06 instead of 0.10. */
-      float t = uTime * 0.06;
+      /* Slower flow than v0.3 — 0.04 instead of 0.06.
+         The whole field crawls now; reads as thick oil. */
+      float t = uTime * 0.04;
       vec2 q = p * 1.6 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
@@ -138,7 +134,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       v = smoothstep(0.55, 0.92, v);
       v = pow(v, 0.85);
 
-      /* Composite into the bioluminescent palette. */
+      /* Composite into the obsidian/ember palette. */
       vec3 col = mix(cValley, cPeak, v);
 
       gl_FragColor = vec4(col, 1.0);
@@ -158,9 +154,11 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   scene.add(mesh);
 
   /* -------- Post-processing pipeline --------
-     RenderPass paints the shader to an RT in linear space, UnrealBloomPass
-     extracts and blurs the brightest pixels (only mint peaks pass the
-     0.35 luminance threshold), OutputPass converts linear back to sRGB. */
+     Bloom strength dropped from 0.70 -> 0.30 per the v0.4 brief.
+     Threshold and radius unchanged: only orange peaks bloom (rec709
+     luminance of #FF4D00 ≈ 0.50, comfortably above 0.35), with the
+     same 0.60 spread. Result reads as a faint warm shimmer rather
+     than a hot glow. */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(window.innerWidth, window.innerHeight);
@@ -169,8 +167,8 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.70,    // strength    — moderate intensity
-    0.60,    // radius      — soft spread
+    0.30,    // strength    — faint shimmer (was 0.70)
+    0.60,    // radius      — same soft spread
     0.35     // threshold   — only bright peaks bloom
   );
   composer.addPass(bloomPass);
@@ -194,10 +192,10 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
   });
 
-  /* -------- Tick — slower flow, heavier settle -------- */
-  const TAU        = 0.85;   // displacement decay tau (was 0.60) — ~2.5s settle
-  const FOLLOW     = 0.10;   // mouse smoothing      (was 0.12)
-  const ENERGY_K   = 20.0;   // speed -> energy      (was 25)
+  /* -------- Tick — v0.4 viscosity (heavier than v0.3) -------- */
+  const TAU        = 1.20;   // wake settle (was 0.85) — ~3.5s
+  const FOLLOW     = 0.07;   // mouse lerp  (was 0.10) — heavier lag
+  const ENERGY_K   = 15.0;   // speed -> energy (was 20)
   const ENERGY_MAX = 1.5;
 
   let lastT = 0;
@@ -228,5 +226,5 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.3 — bioluminescence (mint on navy) · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.4 — obsidian & ember (orange on carbon) · Three.js", THREE.REVISION);
 })();
