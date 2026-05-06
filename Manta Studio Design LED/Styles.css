@@ -3,6 +3,7 @@
    - Geist headline, stacked left, weaves through manta via z-index
    - Neutral near-black ground + chromatic-dispersion bloom
    - Marine snow + film grain on a fixed stage
+   - Liquid Manta: clip-path glass shape with backdrop-filter lensing
    ============================================================ */
 
 :root {
@@ -66,7 +67,9 @@ body {
 }
 
 /* ============================================================
-   STAGE — fixed background container
+   STAGE — fixed background container (ambience only).
+   The manta has been hoisted out to a body-level sibling so its
+   backdrop-filter can sample headline--back through it.
    ============================================================ */
 .stage {
   position: fixed;
@@ -107,47 +110,14 @@ body {
   100% { transform: translate3d(2%, -1%, 0) scale(1); }
 }
 
-/* The manta — sits at z-index 2 inside the stage,
-   so headline halves at z-index 1 sit BEHIND it
-   and headline halves at z-index 3 sit IN FRONT of it. */
-.stage__manta {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  will-change: transform;
-}
-/* Manta drop-shadow stack:
-   1. Soft gravity shadow (softened from 0.5 → 0.35 so it doesn't read as cut-out)
-   2. Mint LED halo so the manta feels lit by the bloom, not pasted on top.
-      Halo alpha = --glow-strength * 0.4 (≈ 0.22) — strong enough to read,
-      not so strong that the silhouette dissolves. */
-.stage__manta-placeholder,
-.stage__manta img {
-  width: min(120vw, 1500px);
-  height: auto;
-  max-height: 95vh;
-  object-fit: contain;
-  filter:
-    drop-shadow(0 30px 80px rgba(0, 0, 0, 0.35))
-    drop-shadow(var(--glow-radius-lg) rgb(from var(--glow-color) r g b / calc(var(--glow-strength) * 0.4)));
-}
-
 .stage__particles {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 4; /* particles drift in front of everything in the stage */
+  z-index: 4;
 }
 
-/* Film grain — pure CSS via inline SVG turbulence.
-   Performance: the previous version used inset:-50% (4× viewport area)
-   and stepped every 267ms. We shrink to 8% over-extent (just enough
-   so the translate doesn't expose edges), slow to 8 steps over 2.4s
-   (300ms per step), and promote the layer to its own composite tile. */
 .stage__grain {
   position: absolute;
   inset: -8%;
@@ -175,6 +145,64 @@ body {
   inset: 0;
   z-index: 6;
   background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.7) 100%);
+}
+
+/* ============================================================
+   LIQUID MANTA — refractive glass silhouette
+   Body-level fixed layer at z-index 2, sandwiched between
+   .hero__headline--back (z 1) and .hero__headline--front (z 3).
+   The backdrop-filter lenses everything painted below: aurora
+   bloom + the back-layer headline as it scrolls past.
+   ============================================================ */
+.stage__manta {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  pointer-events: none;
+  will-change: transform;
+}
+.stage__manta-svg,
+.stage__manta-glass {
+  grid-area: 1 / 1;             /* both stack at the same grid cell */
+  width: min(120vw, 1500px);
+  aspect-ratio: 1200 / 800;
+  max-height: 95vh;
+}
+.stage__manta-svg {
+  z-index: 1;                   /* rim hairline above the glass body */
+  pointer-events: none;
+}
+.stage__manta-rim {
+  fill: none;
+  stroke: var(--glass-border);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+/* The glass body:
+   - clip-path shapes the rectangular div into the manta silhouette
+   - backdrop-filter blur+saturate samples the layers behind the manta
+     (aurora + headline--back) — this IS the lensing
+   - linear-gradient gives volume: cyan top → neutral middle → violet bottom,
+     mirroring the chromatic dispersion of the aurora
+   - drop-shadow stack: soft gravity (0.35) + mint LED halo */
+.stage__manta-glass {
+  clip-path: url(#manta-clip);
+  -webkit-clip-path: url(#manta-clip);
+  backdrop-filter: blur(20px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturate));
+  background:
+    linear-gradient(
+      to bottom,
+      rgb(from var(--c-bloom-1) r g b / 0.10) 0%,
+      var(--glass-tint) 45%,
+      var(--glass-tint) 55%,
+      rgb(from var(--c-bloom-2) r g b / 0.12) 100%
+    );
+  filter:
+    drop-shadow(0 30px 80px rgba(0, 0, 0, 0.35))
+    drop-shadow(var(--glow-radius-lg) rgb(from var(--glow-color) r g b / calc(var(--glow-strength) * 0.4)));
 }
 
 /* ============================================================
@@ -242,11 +270,13 @@ body {
 .nav__menu span:nth-child(2) { width: 70%; align-self: flex-end; }
 
 /* ============================================================
-   HERO — the layered composition
+   HERO — the layered composition.
+   No z-index on .hero: its absolute children's z-indexes (1, 3, 5)
+   participate in the document stacking context, so the manta (z 2)
+   can paint between headline--back and headline--front.
    ============================================================ */
 .hero {
   position: relative;
-  z-index: 2;          /* hero sits above the stage */
   min-height: 100vh;
   padding: 120px var(--pad-x) 60px;
   max-width: var(--maxw);
@@ -264,25 +294,18 @@ body {
   font-weight: 700;
   font-style: normal;
   font-size: clamp(72px, 18vw, 220px);
-  /* Tight editorial stack — 0.92 is the sweet spot for Playfair Display
-     where descenders kiss the next line's cap-height without colliding. */
   line-height: 0.92;
   letter-spacing: -.02em;
   color: var(--c-ink);
   pointer-events: none;
 }
-.hero__headline--back  { z-index: 1; }   /* BEHIND the manta */
-.hero__headline--front { z-index: 3; }   /* IN FRONT of the manta */
+.hero__headline--back  { z-index: 1; }   /* BEHIND the manta — lensed */
+.hero__headline--front { z-index: 3; }   /* IN FRONT of the manta — crisp */
 
-.hero__headline .line {
-  display: block;
-  /* Each line lives at a fixed top so back/front lines interlock perfectly. */
-}
+.hero__headline .line { display: block; }
 /* Vertical positions for each of the four lines.
    CRITICAL: padding-top increments MUST equal the line-height (0.92em)
-   so back-layer and front-layer lines stack into one continuous block.
-   If line-height = 0.92 but padding-top steps by 1em, you get an
-   0.08em gap on every line — that breaks the weave. */
+   so back-layer and front-layer lines stack into one continuous block. */
 .line--we   { padding-top: 0;       }
 .line--make { padding-top: 0.92em;  }
 .line--good { padding-top: 1.84em;  }
@@ -290,8 +313,6 @@ body {
 
 .hero__headline .word {
   display: inline-block;
-  /* Initial state matches the GSAP timeline's set() call exactly,
-     so there is no flash before the timeline takes over. */
   opacity: 0;
   transform: translate(0, 110%);
 }
@@ -315,10 +336,7 @@ body {
   color: var(--c-ink);
   letter-spacing: .02em;
 }
-/* Reel arrow LED pill:
-   - Mint background carries forward from --c-accent.
-   - Outer box-shadow is the LED bloom (--glow-radius-md @ --glow-strength).
-   - Inset 1px ring uses --glass-border to give the pill a glass edge. */
+/* Reel arrow LED pill — mint background + outer LED bloom + inset glass edge. */
 .hero__reel-arrow {
   display: inline-flex;
   align-items: center;
@@ -573,8 +591,9 @@ body {
 
   /* Mobile perf: blurred + animated layers are the most expensive thing
      on the page. We keep the aesthetic but lighten the work the GPU does
-     each frame. The aurora becomes static (still beautiful, just no drift),
-     blur is reduced, and grain shifts on a longer cycle with less opacity. */
+     each frame. The aurora becomes static, blur is reduced, grain shifts
+     on a longer cycle. The Liquid Manta's backdrop-filter is also reduced
+     since it operates on a 1500px-wide region every frame. */
   .stage__aurora {
     animation: none;
     filter: blur(20px) saturate(var(--glass-saturate));
@@ -583,6 +602,10 @@ body {
   .stage__grain {
     opacity: .10;
     animation-duration: 3.2s;
+  }
+  .stage__manta-glass {
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
   }
 }
 

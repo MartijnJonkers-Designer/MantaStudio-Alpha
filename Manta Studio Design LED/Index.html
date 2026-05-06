@@ -20,74 +20,16 @@
 <body>
 
   <!-- ============================================================
-       FIXED STAGE — manta + atmosphere + particles + grain
-       Sits behind everything (z-index 0). Content scrolls over it.
+       FIXED STAGE — ambient atmosphere only (gradient, aurora,
+       particles, grain, vignette). The manta has been promoted to
+       a body-level layer so its backdrop-filter can lens the
+       back-layer headline.
        ============================================================ -->
   <div class="stage" aria-hidden="true">
     <div class="stage__gradient"></div>
-
-    <!-- Aurora-style colour wash (the purple/teal bloom from the reference) -->
     <div class="stage__aurora"></div>
-
-    <!-- The manta sits in the middle of the stage. -->
-    <!-- It will be sandwiched between two halves of the headline using z-index. -->
-    <div class="stage__manta" id="manta">
-      <!-- Drop your high-res manta into assets/manta.png and uncomment: -->
-      <!-- <img src="assets/manta.png" alt="" /> -->
-
-      <!-- Placeholder so the layout reads before the asset is dropped in. -->
-      <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet" class="stage__manta-placeholder">
-        <defs>
-          <radialGradient id="mantaBody" cx="50%" cy="50%" r="55%">
-            <stop offset="0%"  stop-color="#3a4f6b" stop-opacity="0.95"/>
-            <stop offset="60%" stop-color="#1a2638" stop-opacity="0.85"/>
-            <stop offset="100%" stop-color="#070d12" stop-opacity="0"/>
-          </radialGradient>
-          <radialGradient id="mantaGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#6c7fa8" stop-opacity="0.5"/>
-            <stop offset="100%" stop-color="#6c7fa8" stop-opacity="0"/>
-          </radialGradient>
-          <linearGradient id="wingHi" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"  stop-color="#5d75a3" stop-opacity="0.4"/>
-            <stop offset="50%" stop-color="#8aa6d6" stop-opacity="0.65"/>
-            <stop offset="100%" stop-color="#5d75a3" stop-opacity="0.4"/>
-          </linearGradient>
-        </defs>
-
-        <!-- soft glow halo -->
-        <ellipse cx="600" cy="400" rx="560" ry="220" fill="url(#mantaGlow)"/>
-
-        <!-- main wing silhouette — sweeping curve -->
-        <path d="
-          M 60,420
-          C 220,260  420,240  600,330
-          C 780,240  980,260  1140,420
-          C 980,470  780,440  600,400
-          C 420,440  220,470  60,420 Z"
-          fill="url(#mantaBody)"/>
-
-        <!-- highlight rim along the leading wing edge -->
-        <path d="
-          M 100,415
-          C 240,290  430,280  600,355
-          C 770,280  960,290  1100,415"
-          stroke="url(#wingHi)" stroke-width="2" fill="none" opacity="0.7"/>
-
-        <!-- body -->
-        <ellipse cx="600" cy="380" rx="60" ry="35" fill="#1a2638" opacity="0.9"/>
-
-        <!-- trailing tail -->
-        <path d="M 600,410 L 612,640 L 600,665 L 588,640 Z" fill="#1a2638" opacity="0.85"/>
-      </svg>
-    </div>
-
-    <!-- Marine snow particles -->
     <canvas class="stage__particles" id="particles"></canvas>
-
-    <!-- Film grain -->
     <div class="stage__grain"></div>
-
-    <!-- Edge vignette -->
     <div class="stage__vignette"></div>
   </div>
 
@@ -109,11 +51,33 @@
   </header>
 
   <!-- ============================================================
+       LIQUID MANTA — refractive glass silhouette
+       Body-level fixed layer at z-index 2.
+       Stacks BETWEEN .hero__headline--back (z 1) and
+       .hero__headline--front (z 3), so the back layer of the
+       headline reads THROUGH the glass (lensed, blurred, saturated).
+       ============================================================ -->
+  <div class="stage__manta" id="manta" aria-hidden="true">
+    <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet" class="stage__manta-svg">
+      <defs>
+        <!-- objectBoundingBox units: path coords are 0..1 of the clipped
+             element's box. Lets the same clipPath scale to any size. -->
+        <clipPath id="manta-clip" clipPathUnits="objectBoundingBox">
+          <path d="M 0.05,0.525 C 0.18333,0.325 0.35,0.3 0.5,0.4125 C 0.65,0.3 0.81667,0.325 0.95,0.525 C 0.81667,0.5875 0.65,0.55 0.5,0.5 C 0.35,0.55 0.18333,0.5875 0.05,0.525 Z M 0.5,0.5125 L 0.51,0.8 L 0.5,0.83125 L 0.49,0.8 Z"/>
+        </clipPath>
+      </defs>
+      <!-- Rim hairline in viewBox user space — strokes the silhouette edge. -->
+      <path class="stage__manta-rim" d="M 60,420 C 220,260 420,240 600,330 C 780,240 980,260 1140,420 C 980,470 780,440 600,400 C 420,440 220,470 60,420 Z M 600,410 L 612,640 L 600,665 L 588,640 Z"/>
+    </svg>
+    <div class="stage__manta-glass"></div>
+  </div>
+
+  <!-- ============================================================
        HERO — stacked left-aligned headline weaving through the manta
-       Layering trick:
-         .hero__headline--back  → z-index: 1   (BEHIND manta)
-         .stage__manta          → z-index: 2   (the manta)
-         .hero__headline--front → z-index: 3   (IN FRONT of manta)
+       Layering trick (now actually working at the document level):
+         .hero__headline--back  → z-index: 1   (BEHIND manta, lensed)
+         .stage__manta          → z-index: 2   (the glass)
+         .hero__headline--front → z-index: 3   (IN FRONT of manta, crisp)
        ============================================================ -->
   <section class="hero">
 
