@@ -1,11 +1,11 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.5 (Deep Glass)
+   AUROS — Liquid Engine v0.6 (Brand: gold + silver on midnight navy)
 
-   Restrained periwinkle highlights on a near-black ground with
-   a hint of blue depth. The bloom is barely there — a reflection,
-   not a glow. Dots scaled 20% smaller for a high-resolution scan.
+   Aligned with the official MantaStudio brand palette. Gold appears
+   only on the wave crests; the rest of the field reads as deep ocean.
+   Bloom is barely perceptible — a shimmer, not a glow.
 
-   Pipeline unchanged from v0.3/v0.4:
+   Pipeline unchanged from v0.3-v0.5:
      ShaderMaterial (fbm) -> RenderPass -> UnrealBloomPass -> OutputPass
    ============================================================ */
 
@@ -34,7 +34,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x080A0F, 1);   // near-black with depth
+  renderer.setClearColor(0x020611, 1);   // deep midnight navy
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -102,11 +102,11 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       return v;
     }
 
-    /* Palette — deep glass.
-       cValley = #080A0F (near-black, slight blue lift)
-       cPeak   = #A5B4FC (ice blue / periwinkle) */
-    const vec3 cValley = vec3(0.0314, 0.0392, 0.0588);
-    const vec3 cPeak   = vec3(0.6471, 0.7059, 0.9882);
+    /* Brand palette.
+       cValley = #020611 (deep midnight navy)
+       cPeak   = #D4AF37 (muted gold) */
+    const vec3 cValley = vec3(0.0078, 0.0235, 0.0667);
+    const vec3 cPeak   = vec3(0.8314, 0.6863, 0.2157);
 
     void main() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
@@ -118,11 +118,8 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* Slow flow (v0.4 viscosity — unchanged). */
+      /* Slow flow + 20%-smaller features (v0.5 settings preserved). */
       float t = uTime * 0.04;
-
-      /* Higher-frequency input (p * 2.0 vs 1.6 in v0.4) — ~20% smaller
-         features. Reads as higher-resolution scan / finer detail. */
       vec2 q = p * 2.0 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
@@ -131,12 +128,14 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       vec2 q2 = q + warp * 0.55;
       float v = fbm(q2 + vec2(t * 0.5));
 
-      /* Same contrast as v0.4 — sharp peaks at smaller scale. */
+      /* "Gold only on peaks" — narrower threshold and steeper pow.
+         Most of the field stays flat dark navy; only the highest crests
+         pick up the gold tint. Reads as specular highlights on water. */
       v = v * 0.5 + 0.5;
-      v = smoothstep(0.55, 0.92, v);
-      v = pow(v, 0.85);
+      v = smoothstep(0.68, 0.92, v);    // tighter low end (was 0.55)
+      v = pow(v, 1.3);                   // darken mid-tones (was 0.85)
 
-      /* Composite into the deep-glass palette. */
+      /* Composite into the brand palette. */
       vec3 col = mix(cValley, cPeak, v);
 
       gl_FragColor = vec4(col, 1.0);
@@ -156,10 +155,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   scene.add(mesh);
 
   /* -------- Post-processing pipeline --------
-     Bloom strength dropped from 0.30 -> 0.15. Threshold and radius
-     unchanged: ice blue (rec709 luminance ~0.72) still blooms cleanly,
-     but at half the previous intensity. Reads as a faint reflection,
-     not a glow. */
+     Bloom strength dropped from 0.15 -> 0.10. Threshold and radius
+     unchanged: gold (rec709 luminance ~0.68) still blooms cleanly,
+     but as a barely-there shimmer. */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(window.innerWidth, window.innerHeight);
@@ -168,7 +166,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.15,    // strength    — faint reflection (was 0.30)
+    0.10,    // strength    — very subtle shimmer (was 0.15)
     0.60,    // radius      — unchanged
     0.35     // threshold   — unchanged
   );
@@ -227,5 +225,5 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.5 — deep glass (ice blue) · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.6 — brand palette (gold + silver) · Three.js", THREE.REVISION);
 })();

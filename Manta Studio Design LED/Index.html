@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#080A0F" />
+  <meta name="theme-color" content="#020611" />
   <title>Auros — Liquid Engine</title>
   <meta name="description" content="Auros: a liquid rendering engine." />
 
@@ -16,17 +16,21 @@
 
   <link rel="stylesheet" href="Styles.css" />
 
-  <!-- v0.5 deep glass:
-       Pure white text with mix-blend-mode: difference.
-         over #080A0F bg     →  ~white
-         over #A5B4FC peaks  →  muted dark olive (90, 75, 3)
-       The blend produces gentle warm flares where peaks pass through
-       the letters — much subtler than v0.4's cyan inversion. -->
+  <!-- v0.6 brand palette: WE MOVE in gold, THE DEEP in silver,
+       both on the deep midnight navy ground. mix-blend-mode dropped
+       — against this palette it produced black holes (gold-on-gold)
+       and muddy blues (silver-on-gold) instead of luxury contrast.
+       The headline now stacks the two lines vertically via
+       flex-direction: column on the parent. -->
   <style>
     .headline {
-      color: #FFFFFF;
-      mix-blend-mode: difference;
+      flex-direction: column;
     }
+    .headline > span {
+      display: block;
+    }
+    .headline__gold   { color: #D4AF37; }
+    .headline__silver { color: #C0C0C0; }
   </style>
 
   <!-- Import map: "three" + addons namespace, both pinned to 0.170.0. -->
@@ -43,7 +47,10 @@
 
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
 
-  <h1 class="headline">WE MOVE THE DEEP</h1>
+  <h1 class="headline">
+    <span class="headline__gold">WE MOVE</span>
+    <span class="headline__silver">THE DEEP</span>
+  </h1>
 
   <script type="module" src="main.js"></script>
 </body>
