@@ -1,45 +1,54 @@
 /* ============================================================
-   MAIN — GSAP load-time clip-path reveals (no scroll triggers)
+   AUROS — Liquid Engine v0.1 (baseline)
+
+   Step 1: load Three.js, mount an empty WebGL scene to the
+   #auros-canvas, render in a RAF tick. The scene is empty on
+   purpose — this commit establishes that the engine is alive
+   and the render loop is ticking. Liquid logic comes in later steps.
    ============================================================ */
 
+import * as THREE from "https://unpkg.com/three@0.170.0/build/three.module.js";
+
 (function () {
-  if (typeof gsap === "undefined") return;
-
-  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const SNAP_DURATION = 0.8;
-  const SNAP_EASE = "expo.out";
-  const REVEALED = "inset(0 0 0 0)";
-  const HIDDEN   = "inset(0 0 100% 0)";
-
-  const reveals = document.querySelectorAll("[data-reveal]");
-  if (!reveals.length) return;
-
-  if (prefersReduced) {
-    gsap.set(reveals, { clipPath: REVEALED });
+  const canvas = document.getElementById("auros-canvas");
+  if (!canvas) {
+    console.warn("[Auros] No #auros-canvas element found; engine not started.");
     return;
   }
 
-  const headlineLines = document.querySelectorAll(".headline .line[data-reveal]");
-  const otherReveals  = document.querySelectorAll("[data-reveal]:not(.line)");
+  /* Scene + camera + renderer */
+  const scene = new THREE.Scene();
 
-  const tl = gsap.timeline({ delay: 0.2 });
+  const camera = new THREE.PerspectiveCamera(
+    60,                                       // fov
+    window.innerWidth / window.innerHeight,   // aspect
+    0.1,                                      // near
+    1000                                      // far
+  );
+  camera.position.z = 5;
 
-  if (headlineLines.length) {
-    tl.set(headlineLines, { clipPath: HIDDEN });
-    tl.to(headlineLines, {
-      clipPath: REVEALED,
-      duration: SNAP_DURATION,
-      ease: SNAP_EASE,
-      stagger: 0.10,
-    });
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    alpha: true,
+    antialias: true,
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.setClearColor(0x000000, 1);
+
+  /* Resize handling */
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  });
+
+  /* Tick — empty scene for now, but the loop is alive. */
+  function tick() {
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
   }
-  if (otherReveals.length) {
-    tl.set(otherReveals, { clipPath: HIDDEN });
-    tl.to(otherReveals, {
-      clipPath: REVEALED,
-      duration: SNAP_DURATION,
-      ease: SNAP_EASE,
-      stagger: 0.08,
-    }, "-=0.45");
-  }
+  tick();
+
+  console.log("[Auros] Liquid Engine v0.1 baseline online — Three.js", THREE.REVISION);
 })();

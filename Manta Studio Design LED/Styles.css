@@ -1,329 +1,52 @@
 /* ============================================================
-   MANTA WORKS — v6 (Marc Friedman strict-grid app, polished)
-
-   - 4-col x 5-row CSS grid with 1px white borders (gap technique)
-   - Headline spans cols 1-4 rows 2-3 (full-width, 2 lines)
-   - Geist Mono for everything
-   - Headline 25vw / weight 900 / line-height 0.7 / letter-spacing -0.08em
-   - Cursor: mix-blend-mode: difference + white strokes (always visible)
-   - HUD: 90ms interval flicker for live-system feel
-   - Site fits in 100vh, no scroll
+   AUROS — Liquid Engine v0.1 (baseline)
+   Bare ground state: black background, Geist Mono 900,
+   centered headline at 18vw, full-viewport WebGL canvas behind.
+   No interaction, no layout, no design system yet.
    ============================================================ */
 
 :root {
-  --c-bg:        #000000;
-  --c-ink:       #FFFFFF;
-  --c-ink-soft:  #B8BCC8;
-  --c-ink-mute:  #6A6E7A;
-  --c-accent:    #7CFFCB;
-
-  --f-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-
-  --pad-x: clamp(16px, 2.4vw, 32px);
-  --pad-y: clamp(14px, 1.6vw, 22px);
+  --bg:  #000000;
+  --ink: #FFFFFF;
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
-body {
-  background: var(--c-bg);
-  color: var(--c-ink);
-  font-family: var(--f-mono);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.5;
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
+  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;            /* full-screen app: no scroll */
-  cursor: none;
-  height: 100vh;
 }
-@media (pointer: coarse) { body { cursor: auto; } }
-::selection { background: var(--c-ink); color: var(--c-bg); }
 
-/* ============================================================
-   CURSOR — white crosshair with mix-blend-mode: difference.
-   Result by background:
-     black  bg  → |255-0|     = white       (visible)
-     white  bg  → |255-255|   = black       (visible)
-     mint   bg  → (131,0,52)              (visible, dark red)
-   Cursor is never invisible. NB: "white on mint" is technically
-   burgundy due to per-channel difference, not pure white.
-   ============================================================ */
-.cursor {
+.canvas {
   position: fixed;
-  top: 0; left: 0;
-  width: 22px; height: 22px;
-  pointer-events: none;
-  z-index: 100;
-  will-change: transform;
-  mix-blend-mode: difference;
-  transform:
-    translate(var(--cursor-x, 50vw), var(--cursor-y, 50vh))
-    translate(-50%, -50%);
-}
-.cursor::before, .cursor::after {
-  content: ""; position: absolute;
-  background: var(--c-ink);
-}
-.cursor::before { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
-.cursor::after  { top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); }
-@media (pointer: coarse) { .cursor { display: none; } }
-
-/* ============================================================
-   APP — 4-col x 5-row grid, hard-locked to 100vh
-   Row 1: nav (auto)
-   Rows 2-3: headline (1fr each, splits available main height)
-   Row 4: sidebar (auto, sized to content)
-   Row 5: footer (auto)
-   ============================================================ */
-.app {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: auto 1fr 1fr auto auto;
-  gap: 1px;
-  background: var(--c-ink);
-  padding: 1px;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.cell {
-  background: var(--c-bg);
-  color: var(--c-ink);
-  padding: var(--pad-y) var(--pad-x);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  text-decoration: none;
-  font-family: var(--f-mono);
-  position: relative;
-  transition: none;
-  overflow: hidden;
-}
-.cell:hover {
-  background: var(--c-accent);
-  color: var(--c-bg);
-}
-.cell:hover * { color: inherit; }
-
-.cell__label {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--c-accent);
-}
-.cell__sub {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--c-ink-mute);
-  margin-top: auto;
-}
-.cell__name {
-  font-size: 12px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--c-ink);
-}
-
-/* NAV CELLS */
-.cell--brand .cell__label {
-  color: var(--c-ink);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-}
-.cell--brand .cell__sub { margin-top: 4px; }
-.cell--nav {
-  flex-direction: row;
-  align-items: baseline;
-  gap: 14px;
-}
-.cell--nav .cell__index {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: var(--c-accent);
-}
-.cell--nav .cell__name {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-}
-
-/* ============================================================
-   HEADLINE CELL — cols 1-4 rows 2-3 (full-width, 2 lines)
-   25vw / weight 900 / line-height 0.7 / letter-spacing -0.08em.
-   At -0.08em, Geist Mono chars almost touch — reads custom-cut.
-   ============================================================ */
-.cell--headline {
-  grid-column: 1 / 5;
-  grid-row: 2 / 4;
-  padding: clamp(20px, 3vw, 40px) var(--pad-x);
-  align-items: flex-start;
-  justify-content: center;
-}
-.headline {
-  font-family: var(--f-mono);
-  font-size: 25vw;
-  line-height: 0.7;
-  font-weight: 900;
-  letter-spacing: -0.08em;
-  text-transform: uppercase;
-  color: inherit;
+  inset: 0;
   width: 100%;
-  white-space: nowrap;        /* keep each line on one line */
+  height: 100%;
+  z-index: 0;
+  display: block;
 }
-.headline .line { display: block; }
 
-/* ============================================================
-   SIDEBAR CELLS — row 4, cols 1-4 (4 cells horizontal)
-   ============================================================ */
-.cell--data {
-  flex-direction: row;
-  gap: 16px;
-  align-items: flex-start;
-}
-.cell--data .cell__label {
-  flex-shrink: 0;
-  align-self: flex-start;
-}
-.cell--data .cell__manta {
-  flex: 1 1 auto;
-  min-width: 0;
+.headline {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-}
-.cell--data .cell__manta svg {
-  width: 100%;
-  max-width: 140px;
-  height: auto;
-  display: block;
-  color: var(--c-ink);
-}
-.cell--data .cell__specs {
-  flex-shrink: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 9px;
-  letter-spacing: 0.18em;
+  text-align: center;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-weight: 900;
+  font-size: 18vw;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink);
   text-transform: uppercase;
-  margin-left: auto;
-}
-.cell--data .cell__specs li {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--c-ink-mute);
-}
-.cell--data .cell__specs li span:last-child { color: var(--c-accent); }
-.cell--data:hover * { color: inherit !important; }
-
-.cell--about .cell__body {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--c-ink);
-  letter-spacing: 0.01em;
-  margin: 8px 0 auto;
-}
-
-.cell--services .cell__list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-}
-.cell--services .cell__list li {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--c-ink);
-}
-.cell--services .cell__list li span:first-child {
-  color: var(--c-accent);
-  font-size: 9px;
-}
-
-.cell--cta .cell__email {
-  font-size: clamp(14px, 1.2vw, 18px);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--c-ink);
-  margin: 8px 0 auto;
-  border-bottom: 1px solid var(--c-ink-mute);
-  padding-bottom: 4px;
-  align-self: flex-start;
-  word-break: break-all;
-}
-.cell--cta:hover .cell__email { border-bottom-color: var(--c-bg); }
-
-/* FOOTER CELLS */
-.cell--foot {
-  flex-direction: column;
-  gap: 4px;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.cell--foot .cell__label { color: var(--c-ink-mute); }
-.cell--foot .cell__name { color: var(--c-ink); font-size: 11px; }
-.cell--hud em {
-  color: var(--c-accent);
-  font-style: normal;
-  font-weight: 500;
-  margin-left: 8px;
-}
-.cell--hud:hover em { color: var(--c-bg); }
-
-/* REVEALS — clip-path top-down wipe */
-[data-reveal] { clip-path: inset(0 0 100% 0); }
-
-/* RESPONSIVE — below 1024px collapse to 2 cols, below 640 single col */
-@media (max-width: 1024px) {
-  body { overflow: auto; height: auto; }
-  .app {
-    grid-template-columns: repeat(2, 1fr);
-    grid-template-rows: auto;
-    grid-auto-rows: minmax(120px, auto);
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-  }
-  .cell--brand { grid-column: 1 / 3; }
-  .cell--nav   { grid-column: span 2 / auto; }
-  .cell--headline {
-    grid-column: 1 / 3;
-    grid-row: auto;
-  }
-  .cell--data, .cell--about, .cell--services, .cell--cta { grid-column: span 1; }
-  .cell--foot { grid-column: span 1; }
-  .cell--data { flex-direction: column; }
-}
-@media (max-width: 640px) {
-  .app { grid-template-columns: 1fr; }
-  .cell--brand,
-  .cell--nav,
-  .cell--headline,
-  .cell--data,
-  .cell--about,
-  .cell--services,
-  .cell--cta,
-  .cell--foot { grid-column: 1 / 2; }
-  .headline { font-size: 22vw; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: .01ms !important;
-    transition-duration: .01ms !important;
-  }
-  [data-reveal] { clip-path: inset(0 0 0 0); }
+  pointer-events: none;
+  padding: 0 4vw;
 }
