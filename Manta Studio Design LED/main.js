@@ -1,12 +1,11 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.4 (Obsidian & Ember)
+   AUROS — Liquid Engine v0.5 (Deep Glass)
 
-   Industrial ember theme on top of the v0.2/v0.3 liquid engine.
-   Safety orange highlights on carbon black, with a very faint warm
-   bloom shimmer. Movement weighted heavier than v0.3 — closer to
-   thick oil than to water.
+   Restrained periwinkle highlights on a near-black ground with
+   a hint of blue depth. The bloom is barely there — a reflection,
+   not a glow. Dots scaled 20% smaller for a high-resolution scan.
 
-   Pipeline unchanged from v0.3:
+   Pipeline unchanged from v0.3/v0.4:
      ShaderMaterial (fbm) -> RenderPass -> UnrealBloomPass -> OutputPass
    ============================================================ */
 
@@ -35,7 +34,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x050505, 1);   // carbon black
+  renderer.setClearColor(0x080A0F, 1);   // near-black with depth
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -103,10 +102,11 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       return v;
     }
 
-    /* Palette — normalised hex.
-       cValley = #050505,  cPeak = #FF4D00. */
-    const vec3 cValley = vec3(0.0196, 0.0196, 0.0196);
-    const vec3 cPeak   = vec3(1.0000, 0.3020, 0.0000);
+    /* Palette — deep glass.
+       cValley = #080A0F (near-black, slight blue lift)
+       cPeak   = #A5B4FC (ice blue / periwinkle) */
+    const vec3 cValley = vec3(0.0314, 0.0392, 0.0588);
+    const vec3 cPeak   = vec3(0.6471, 0.7059, 0.9882);
 
     void main() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
@@ -118,10 +118,12 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* Slower flow than v0.3 — 0.04 instead of 0.06.
-         The whole field crawls now; reads as thick oil. */
+      /* Slow flow (v0.4 viscosity — unchanged). */
       float t = uTime * 0.04;
-      vec2 q = p * 1.6 + ripple;
+
+      /* Higher-frequency input (p * 2.0 vs 1.6 in v0.4) — ~20% smaller
+         features. Reads as higher-resolution scan / finer detail. */
+      vec2 q = p * 2.0 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
         fbm(q + vec2(0.0,       t * 0.8  ))
@@ -129,12 +131,12 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       vec2 q2 = q + warp * 0.55;
       float v = fbm(q2 + vec2(t * 0.5));
 
-      /* High-contrast finish: deep valleys, sharp bright peaks. */
+      /* Same contrast as v0.4 — sharp peaks at smaller scale. */
       v = v * 0.5 + 0.5;
       v = smoothstep(0.55, 0.92, v);
       v = pow(v, 0.85);
 
-      /* Composite into the obsidian/ember palette. */
+      /* Composite into the deep-glass palette. */
       vec3 col = mix(cValley, cPeak, v);
 
       gl_FragColor = vec4(col, 1.0);
@@ -154,11 +156,10 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   scene.add(mesh);
 
   /* -------- Post-processing pipeline --------
-     Bloom strength dropped from 0.70 -> 0.30 per the v0.4 brief.
-     Threshold and radius unchanged: only orange peaks bloom (rec709
-     luminance of #FF4D00 ≈ 0.50, comfortably above 0.35), with the
-     same 0.60 spread. Result reads as a faint warm shimmer rather
-     than a hot glow. */
+     Bloom strength dropped from 0.30 -> 0.15. Threshold and radius
+     unchanged: ice blue (rec709 luminance ~0.72) still blooms cleanly,
+     but at half the previous intensity. Reads as a faint reflection,
+     not a glow. */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(window.innerWidth, window.innerHeight);
@@ -167,9 +168,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.30,    // strength    — faint shimmer (was 0.70)
-    0.60,    // radius      — same soft spread
-    0.35     // threshold   — only bright peaks bloom
+    0.15,    // strength    — faint reflection (was 0.30)
+    0.60,    // radius      — unchanged
+    0.35     // threshold   — unchanged
   );
   composer.addPass(bloomPass);
 
@@ -192,10 +193,10 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
   });
 
-  /* -------- Tick — v0.4 viscosity (heavier than v0.3) -------- */
-  const TAU        = 1.20;   // wake settle (was 0.85) — ~3.5s
-  const FOLLOW     = 0.07;   // mouse lerp  (was 0.10) — heavier lag
-  const ENERGY_K   = 15.0;   // speed -> energy (was 20)
+  /* -------- Tick — v0.4 viscosity preserved -------- */
+  const TAU        = 1.20;
+  const FOLLOW     = 0.07;
+  const ENERGY_K   = 15.0;
   const ENERGY_MAX = 1.5;
 
   let lastT = 0;
@@ -226,5 +227,5 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.4 — obsidian & ember (orange on carbon) · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.5 — deep glass (ice blue) · Three.js", THREE.REVISION);
 })();
