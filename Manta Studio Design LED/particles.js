@@ -1,26 +1,55 @@
 /* ============================================================
-   MARINE SNOW — lightweight canvas particle system
-   Drifting depth-layered motes. Auto-scales to viewport,
-   pauses when tab is hidden, respects reduced-motion.
+   BACKGROUND SYSTEM — high-density canvas particles + manta-follow
+
+   One RAF loop drives two coupled systems:
+   1. Manta-follow:    smooths the cursor toward the .stage__manta-follow
+                       wrapper via a CSS variable. Lerp factor gives the
+                       "heavy/expensive" settle. Inner #manta keeps its
+                       independent GSAP animations untouched.
+   2. Particle field:  1100 (desktop) / 380 (mobile) tiny mint+white dots.
+                       Repulsed by the manta within REPULSE_RADIUS.
+                       Wake force in the manta's direction-of-motion when
+                       the manta is moving fast enough to register.
+                       Brownian drift keeps the field alive when idle.
+
+   Pauses on visibility-hidden, single-frame fallback for reduced-motion.
    ============================================================ */
 
 (function () {
   const canvas = document.getElementById("particles");
+  const mantaFollow = document.getElementById("manta-follow");
   if (!canvas) return;
 
   const ctx = canvas.getContext("2d", { alpha: true });
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const isMobile = window.innerWidth < 760;
+  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* -------- Tuning -------- */
+  const TARGET_COUNT          = isMobile ? 380 : 1100;
+  const MINT_RATIO            = 0.30;     // 30% mint, 70% white
+  const SIZE_MIN              = 0.5;
+  const SIZE_MAX              = 1.6;
+  const REPULSE_RADIUS        = isMobile ? 160 : 220;
+  const REPULSE_RADIUS_2      = REPULSE_RADIUS * REPULSE_RADIUS;
+  const REPULSE_STRENGTH      = 380;      // peak force at edge of repulse zone
+  const WAKE_STRENGTH         = 0.045;    // multiplier on manta speed
+  const WAKE_SPEED_THRESHOLD  = 0.04;     // squared px/frame, ~0.2 px/frame
+  const DRIFT_STRENGTH        = 0.018;    // brownian random walk per axis
+  const DAMPING               = 0.92;
+  const FOLLOW_FACTOR         = 0.06;     // lerp toward target each frame
+  const FOLLOW_STRENGTH_X     = 0.10;     // max manta drift = 10% of viewport width
+  const FOLLOW_STRENGTH_Y     = 0.06;     // less vertical drift, feels grounded
+
+  /* -------- State -------- */
   let w = 0, h = 0;
   let particles = [];
   let running = true;
-  let pointerX = 0.5, pointerY = 0.5;
+  let mouseX = 0.5, mouseY = 0.5;       // normalized 0..1 of viewport
+  let mantaOffsetX = 0, mantaOffsetY = 0;
+  let lastMantaOffsetX = 0, lastMantaOffsetY = 0;
 
-  function targetCount() {
-    const area = window.innerWidth * window.innerHeight;
-    // Slightly lower density than v1 — keeps mobile silky
-    return Math.min(110, Math.max(35, Math.floor(area / 11000)));
-  }
+  function rand(min, max) { return Math.random() * (max - min) + min; }
 
   function resize() {
     w = window.innerWidth;
@@ -30,80 +59,140 @@
     canvas.style.width = w + "px";
     canvas.style.height = h + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    seed();
+    if (particles.length === 0) seed();
+    else {
+      // Reflow particles that ended up outside the new bounds
+      for (const p of particles) {
+        if (p.x < 0 || p.x > w) p.x = rand(0, w);
+        if (p.y < 0 || p.y > h) p.y = rand(0, h);
+      }
+    }
   }
-
-  function rand(min, max) { return Math.random() * (max - min) + min; }
 
   function seed() {
-    const n = targetCount();
-    particles = [];
-    for (let i = 0; i < n; i++) particles.push(makeParticle(true));
+    particles = new Array(TARGET_COUNT);
+    for (let i = 0; i < TARGET_COUNT; i++) {
+      const depth = Math.random();
+      particles[i] = {
+        x: rand(0, w),
+        y: rand(0, h),
+        vx: rand(-0.05, 0.05),
+        vy: rand(-0.05, 0.05),
+        r: SIZE_MIN + depth * (SIZE_MAX - SIZE_MIN),
+        alpha: 0.35 + depth * 0.45,        // 0.35..0.80 — subtle depth
+        mint: Math.random() < MINT_RATIO,
+      };
+    }
   }
 
-  function makeParticle(initial) {
-    const layer = Math.random();
-    const depth = layer < 0.55 ? 0 : layer < 0.85 ? 1 : 2;
-    const sizeByDepth   = [[0.6, 1.4], [1.2, 2.4], [2.0, 3.6]][depth];
-    const speedByDepth  = [0.06, 0.14, 0.26][depth];
-    const opacityByDepth = [0.22, 0.42, 0.65][depth];
-
-    return {
-      x: rand(0, w),
-      y: initial ? rand(0, h) : rand(-40, -10),
-      r: rand(sizeByDepth[0], sizeByDepth[1]),
-      vy: speedByDepth * rand(0.7, 1.3),
-      vx: rand(-0.06, 0.06),
-      drift: rand(0, Math.PI * 2),
-      driftSpeed: rand(0.003, 0.012),
-      driftAmp: rand(0.2, 0.7),
-      alpha: opacityByDepth * rand(0.6, 1),
-      depth,
-    };
+  function updateMantaFollow() {
+    const targetX = (mouseX - 0.5) * w * FOLLOW_STRENGTH_X;
+    const targetY = (mouseY - 0.5) * h * FOLLOW_STRENGTH_Y;
+    lastMantaOffsetX = mantaOffsetX;
+    lastMantaOffsetY = mantaOffsetY;
+    mantaOffsetX += (targetX - mantaOffsetX) * FOLLOW_FACTOR;
+    mantaOffsetY += (targetY - mantaOffsetY) * FOLLOW_FACTOR;
+    if (mantaFollow) {
+      mantaFollow.style.setProperty("--manta-follow-x", mantaOffsetX.toFixed(2) + "px");
+      mantaFollow.style.setProperty("--manta-follow-y", mantaOffsetY.toFixed(2) + "px");
+    }
   }
 
   function step() {
     if (!running) return;
+
+    updateMantaFollow();
+
+    const mantaCx = w * 0.5 + mantaOffsetX;
+    const mantaCy = h * 0.5 + mantaOffsetY;
+    const mantaVx = mantaOffsetX - lastMantaOffsetX;
+    const mantaVy = mantaOffsetY - lastMantaOffsetY;
+    const mantaSpeed2 = mantaVx * mantaVx + mantaVy * mantaVy;
+    const mantaMoving = mantaSpeed2 > WAKE_SPEED_THRESHOLD;
+    let mantaSpeed = 0, mantaDirX = 0, mantaDirY = 0;
+    if (mantaMoving) {
+      mantaSpeed = Math.sqrt(mantaSpeed2);
+      mantaDirX = mantaVx / mantaSpeed;
+      mantaDirY = mantaVy / mantaSpeed;
+    }
+
     ctx.clearRect(0, 0, w, h);
 
-    const px = (pointerX - 0.5) * 12;
-    const py = (pointerY - 0.5) * 6;
-
+    /* Pass 1: physics for ALL particles, render WHITE.
+       Two render passes (white then mint) so we set fillStyle exactly twice
+       per frame. globalAlpha varies per particle for atmospheric depth. */
+    ctx.fillStyle = "rgba(255, 255, 255, 1)";
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
 
-      p.drift += p.driftSpeed;
-      p.x += p.vx + Math.sin(p.drift) * p.driftAmp * 0.05;
-      p.y += p.vy;
+      // Brownian drift
+      p.vx += (Math.random() - 0.5) * DRIFT_STRENGTH * 2;
+      p.vy += (Math.random() - 0.5) * DRIFT_STRENGTH * 2;
 
-      const dx = p.x + px * (p.depth + 1) * 0.3;
-      const dy = p.y + py * (p.depth + 1) * 0.3;
-
-      if (p.y - p.r > h + 20 || p.x < -40 || p.x > w + 40) {
-        Object.assign(p, makeParticle(false));
-        continue;
+      // Repulsion + wake (one pass through the manta-relative geometry)
+      const dx = p.x - mantaCx;
+      const dy = p.y - mantaCy;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 < REPULSE_RADIUS_2 && dist2 > 1) {
+        const dist = Math.sqrt(dist2);
+        const falloff = 1 - dist / REPULSE_RADIUS;
+        // Repulsion: outward force, falls off toward edge of repulse zone
+        const repulse = REPULSE_STRENGTH * falloff / dist2;
+        p.vx += dx * repulse;
+        p.vy += dy * repulse;
+        // Wake: push in manta's direction of motion when it's moving
+        if (mantaMoving) {
+          const wake = WAKE_STRENGTH * mantaSpeed * falloff;
+          p.vx += mantaDirX * wake;
+          p.vy += mantaDirY * wake;
+        }
       }
 
-      const grd = ctx.createRadialGradient(dx, dy, 0, dx, dy, p.r * 3);
-      grd.addColorStop(0,   `rgba(255, 255, 255, ${p.alpha})`);
-      grd.addColorStop(0.4, `rgba(220, 230, 245, ${p.alpha * 0.4})`);
-      grd.addColorStop(1,   "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(dx, dy, p.r * 3, 0, Math.PI * 2);
-      ctx.fill();
+      // Damping prevents runaway velocity and gives particles a settle
+      p.vx *= DAMPING;
+      p.vy *= DAMPING;
+
+      // Move
+      p.x += p.vx;
+      p.y += p.vy;
+
+      // Wrap edges (no respawn churn — the field is conservative)
+      if (p.x < -2) p.x = w + 2;
+      else if (p.x > w + 2) p.x = -2;
+      if (p.y < -2) p.y = h + 2;
+      else if (p.y > h + 2) p.y = -2;
+
+      // Render only the white particles in this pass
+      if (!p.mint) {
+        ctx.globalAlpha = p.alpha;
+        // fillRect is ~3x faster than arc+fill at sub-2px sizes,
+        // and visually indistinguishable from a circle this small.
+        ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+      }
     }
+
+    /* Pass 2: render MINT particles. Physics already updated in pass 1. */
+    ctx.fillStyle = "rgba(124, 255, 203, 1)";    // --c-accent (#7CFFCB)
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      if (p.mint) {
+        ctx.globalAlpha = p.alpha;
+        ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
 
     requestAnimationFrame(step);
   }
 
-  // Pointer parallax (also wired to touch via pointer events)
+  /* Pointer tracking — single source of truth for both manta-follow
+     and particle repulsion. Touch-only devices keep mouseX/Y at 0.5
+     (viewport center), so the manta stays centered without a pointer. */
   window.addEventListener("pointermove", (e) => {
-    pointerX = e.clientX / w;
-    pointerY = e.clientY / h;
+    mouseX = e.clientX / w;
+    mouseY = e.clientY / h;
   }, { passive: true });
 
-  // Pause when tab hidden
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       running = false;
@@ -113,28 +202,25 @@
     }
   });
 
-  // Respect reduced motion — render a single frame and stop
-  const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (prefersReduced) {
-    resize();
-    running = false;
-    requestAnimationFrame(() => {
-      ctx.clearRect(0, 0, w, h);
-      particles.forEach(p => {
-        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha * 0.6})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-      });
-    });
-    return;
-  }
-
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(resize, 120);
   });
+
+  if (prefersReduced) {
+    resize();
+    running = false;
+    // Render a single static frame, no animation, no manta-follow
+    ctx.clearRect(0, 0, w, h);
+    for (const p of particles) {
+      ctx.fillStyle = p.mint
+        ? `rgba(124, 255, 203, ${p.alpha * 0.7})`
+        : `rgba(255, 255, 255, ${p.alpha * 0.7})`;
+      ctx.fillRect(p.x - p.r, p.y - p.r, p.r * 2, p.r * 2);
+    }
+    return;
+  }
 
   resize();
   requestAnimationFrame(step);

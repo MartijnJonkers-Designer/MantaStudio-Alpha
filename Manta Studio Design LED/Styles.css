@@ -2,21 +2,22 @@
    MANTA WORKS — Editorial landing v2 (Liquid Glass refit)
    - Geist headline, stacked left, weaves through manta via z-index
    - Neutral near-black ground + chromatic-dispersion bloom
-   - Marine snow + film grain on a fixed stage
+   - High-density canvas particles repulsed by the manta
+   - Dithered aurora overlay for cinematic grain
    - Liquid Manta: clip-path glass shape with backdrop-filter lensing
    ============================================================ */
 
 :root {
   /* Colour — Liquid Glass (neutral near-black + chromatic bloom) */
-  --c-bg-1:     #05060A;   /* true near-black, no blue cast */
+  --c-bg-1:     #05060A;
   --c-bg-2:     #0C0E14;
   --c-bg-3:     #181B24;
-  --c-ink:      #F5F5F5;   /* off-white — bloom-friendly */
+  --c-ink:      #F5F5F5;
   --c-ink-soft: #B8BCC8;
   --c-ink-mute: #6A6E7A;
-  --c-accent:   #7CFFCB;   /* mint — LED bloom + CTAs */
-  --c-bloom-1:  #38BDF8;   /* sky cyan — cool side of dispersion */
-  --c-bloom-2:  #C77DFF;   /* violet — warm side of dispersion */
+  --c-accent:   #7CFFCB;
+  --c-bloom-1:  #38BDF8;
+  --c-bloom-2:  #C77DFF;
 
   /* Type — Geist (canonical MantaStudio system) */
   --f-display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -68,8 +69,9 @@ body {
 
 /* ============================================================
    STAGE — fixed background container (ambience only).
-   The manta has been hoisted out to a body-level sibling so its
-   backdrop-filter can sample headline--back through it.
+   Layer order: gradient → aurora → dither → particles → grain → vignette.
+   The manta lives outside this stage in its own body-level layer
+   so its backdrop-filter can sample headline--back through it.
    ============================================================ */
 .stage {
   position: fixed;
@@ -87,9 +89,8 @@ body {
 }
 
 /* Aurora — chromatic-dispersion bloom (cyan + violet via --c-bloom-*).
-   Performance: blurred layers are expensive to animate. translate3d forces
-   GPU compositing, will-change locks the layer, and a long 30s cycle keeps
-   per-frame work minimal on mobile. Saturate amps the chromatic punch. */
+   Smooth gradients on their own read "digital." The .stage__dither layer
+   above adds the cinematic grain that breaks up the smoothness. */
 .stage__aurora {
   position: absolute;
   inset: -10%;
@@ -100,7 +101,7 @@ body {
   filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   opacity: .9;
   will-change: transform;
-  transform: translate3d(0, 0, 0);   /* promote to its own layer */
+  transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   animation: auroraDrift 30s ease-in-out infinite alternate;
 }
@@ -108,6 +109,25 @@ body {
   0%   { transform: translate3d(0, 0, 0) scale(1); }
   50%  { transform: translate3d(-2%, 1%, 0) scale(1.05); }
   100% { transform: translate3d(2%, -1%, 0) scale(1); }
+}
+
+/* Dither — high-frequency SVG turbulence overlaid via mix-blend-mode: overlay.
+   Sits ABOVE aurora, BELOW particles. Breaks the smooth radial gradients of
+   the aurora into pixelated grain that reads as cinematic / film-stock,
+   not "smooth digital blur." Distinct from .stage__grain (z 5) which is
+   classic film-grain layered on top of EVERYTHING in the stage. */
+.stage__dither {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='d'><feTurbulence type='fractalNoise' baseFrequency='2.2' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .85 0'/></filter><rect width='100%25' height='100%25' filter='url(%23d)'/></svg>");
+  background-size: 180px 180px;
+  opacity: .32;
+  mix-blend-mode: overlay;
+  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 
 .stage__particles {
@@ -149,17 +169,31 @@ body {
 
 /* ============================================================
    LIQUID MANTA — refractive glass silhouette
-   Body-level fixed layer at z-index 2, sandwiched between
-   .hero__headline--back (z 1) and .hero__headline--front (z 3).
-   The backdrop-filter lenses everything painted below: aurora
-   bloom + the back-layer headline as it scrolls past.
+   Two-layer transform stack:
+     .stage__manta-follow  outer wrapper. Position-fixed full viewport,
+                           grid-centered, JS-driven mouse-follow translate
+                           via --manta-follow-x/--manta-follow-y CSS vars.
+     .stage__manta         inner. GSAP animates this for parallax + breath.
+   The two transforms compose multiplicatively, so the follow and the GSAP
+   choreography coexist without fighting each other on the same property.
    ============================================================ */
-.stage__manta {
+.stage__manta-follow {
   position: fixed;
   inset: 0;
   display: grid;
   place-items: center;
   z-index: 2;
+  pointer-events: none;
+  will-change: transform;
+  transform: translate3d(
+    var(--manta-follow-x, 0px),
+    var(--manta-follow-y, 0px),
+    0
+  );
+}
+.stage__manta {
+  display: grid;
+  place-items: center;
   pointer-events: none;
   will-change: transform;
 }
@@ -171,7 +205,7 @@ body {
   max-height: 95vh;
 }
 .stage__manta-svg {
-  z-index: 1;                   /* rim hairline above the glass body */
+  z-index: 1;
   pointer-events: none;
 }
 .stage__manta-rim {
@@ -180,13 +214,6 @@ body {
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
-/* The glass body:
-   - clip-path shapes the rectangular div into the manta silhouette
-   - backdrop-filter blur+saturate samples the layers behind the manta
-     (aurora + headline--back) — this IS the lensing
-   - linear-gradient gives volume: cyan top → neutral middle → violet bottom,
-     mirroring the chromatic dispersion of the aurora
-   - drop-shadow stack: soft gravity (0.35) + mint LED halo */
 .stage__manta-glass {
   clip-path: url(#manta-clip);
   -webkit-clip-path: url(#manta-clip);
@@ -272,8 +299,8 @@ body {
 /* ============================================================
    HERO — the layered composition.
    No z-index on .hero: its absolute children's z-indexes (1, 3, 5)
-   participate in the document stacking context, so the manta (z 2)
-   can paint between headline--back and headline--front.
+   participate in the document stacking context, so the manta-follow
+   layer (z 2) can paint between headline--back and headline--front.
    ============================================================ */
 .hero {
   position: relative;
@@ -283,8 +310,6 @@ body {
   margin: 0 auto;
 }
 
-/* Both headline halves share the same absolute footprint so the lines
-   stack against each other identically — only z-index differs. */
 .hero__headline {
   position: absolute;
   top: 120px;
@@ -324,7 +349,6 @@ body {
   margin-left: -.05em;
 }
 
-/* Showreel CTA — sits low-left like the reference */
 .hero__reel {
   position: absolute;
   bottom: 80px;
@@ -338,7 +362,6 @@ body {
   color: var(--c-ink);
   letter-spacing: .02em;
 }
-/* Reel arrow LED pill — mint background + outer LED bloom + inset glass edge. */
 .hero__reel-arrow {
   display: inline-flex;
   align-items: center;
@@ -369,7 +392,7 @@ body {
 .hero__reel:hover .hero__reel-text { border-color: var(--c-ink); }
 
 /* ============================================================
-   INTRO — the long copy block under the hero (like dogstudio)
+   INTRO
    ============================================================ */
 .intro {
   position: relative;
@@ -412,7 +435,7 @@ body {
 .intro__social span { color: var(--c-ink-mute); }
 
 /* ============================================================
-   SECTIONS — shared
+   SECTIONS
    ============================================================ */
 .section {
   position: relative;
@@ -591,16 +614,14 @@ body {
   .section__title em { padding-left: 12vw; }
   .footer__meta { flex-direction: column; gap: 8px; align-items: center; text-align: center; }
 
-  /* Mobile perf: blurred + animated layers are the most expensive thing
-     on the page. We keep the aesthetic but lighten the work the GPU does
-     each frame. The aurora becomes static, blur is reduced, grain shifts
-     on a longer cycle. The Liquid Manta's backdrop-filter is also reduced
-     since it operates on a 1500px-wide region every frame. */
+  /* Mobile perf: aurora static (no drift), reduced blur. Manta backdrop-filter
+     reduced. Dither slightly toned down so it doesn't dominate the smaller bloom. */
   .stage__aurora {
     animation: none;
     filter: blur(20px) saturate(var(--glass-saturate));
     opacity: .75;
   }
+  .stage__dither { opacity: .22; }
   .stage__grain {
     opacity: .10;
     animation-duration: 3.2s;

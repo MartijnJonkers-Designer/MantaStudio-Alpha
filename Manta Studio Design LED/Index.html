@@ -20,14 +20,14 @@
 <body>
 
   <!-- ============================================================
-       FIXED STAGE — ambient atmosphere only (gradient, aurora,
-       particles, grain, vignette). The manta has been promoted to
-       a body-level layer so its backdrop-filter can lens the
-       back-layer headline.
+       FIXED STAGE — ambient atmosphere only.
+       Layers in z-order: gradient → aurora → dither → particles → grain → vignette.
+       The manta lives in its own body-level layer below.
        ============================================================ -->
   <div class="stage" aria-hidden="true">
     <div class="stage__gradient"></div>
     <div class="stage__aurora"></div>
+    <div class="stage__dither"></div>
     <canvas class="stage__particles" id="particles"></canvas>
     <div class="stage__grain"></div>
     <div class="stage__vignette"></div>
@@ -52,51 +52,45 @@
 
   <!-- ============================================================
        LIQUID MANTA — refractive glass silhouette
-       Body-level fixed layer at z-index 2.
-       Stacks BETWEEN .hero__headline--back (z 1) and
-       .hero__headline--front (z 3), so the back layer of the
-       headline reads THROUGH the glass (lensed, blurred, saturated).
+       Two-layer transform stack:
+         .stage__manta-follow  — outer, JS-driven mouse-follow via CSS var
+         .stage__manta         — inner, GSAP-driven parallax + breath
+       The two transforms compose multiplicatively.
        ============================================================ -->
-  <div class="stage__manta" id="manta" aria-hidden="true">
-    <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet" class="stage__manta-svg">
-      <defs>
-        <!-- objectBoundingBox units: path coords are 0..1 of the clipped
-             element's box. Lets the same clipPath scale to any size. -->
-        <clipPath id="manta-clip" clipPathUnits="objectBoundingBox">
-          <path d="M 0.05,0.525 C 0.18333,0.325 0.35,0.3 0.5,0.4125 C 0.65,0.3 0.81667,0.325 0.95,0.525 C 0.81667,0.5875 0.65,0.55 0.5,0.5 C 0.35,0.55 0.18333,0.5875 0.05,0.525 Z M 0.5,0.5125 L 0.51,0.8 L 0.5,0.83125 L 0.49,0.8 Z"/>
-        </clipPath>
-      </defs>
-      <!-- Rim hairline in viewBox user space — strokes the silhouette edge. -->
-      <path class="stage__manta-rim" d="M 60,420 C 220,260 420,240 600,330 C 780,240 980,260 1140,420 C 980,470 780,440 600,400 C 420,440 220,470 60,420 Z M 600,410 L 612,640 L 600,665 L 588,640 Z"/>
-    </svg>
-    <div class="stage__manta-glass"></div>
+  <div class="stage__manta-follow" id="manta-follow" aria-hidden="true">
+    <div class="stage__manta" id="manta">
+      <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet" class="stage__manta-svg">
+        <defs>
+          <clipPath id="manta-clip" clipPathUnits="objectBoundingBox">
+            <path d="M 0.05,0.525 C 0.18333,0.325 0.35,0.3 0.5,0.4125 C 0.65,0.3 0.81667,0.325 0.95,0.525 C 0.81667,0.5875 0.65,0.55 0.5,0.5 C 0.35,0.55 0.18333,0.5875 0.05,0.525 Z M 0.5,0.5125 L 0.51,0.8 L 0.5,0.83125 L 0.49,0.8 Z"/>
+          </clipPath>
+        </defs>
+        <path class="stage__manta-rim" d="M 60,420 C 220,260 420,240 600,330 C 780,240 980,260 1140,420 C 980,470 780,440 600,400 C 420,440 220,470 60,420 Z M 600,410 L 612,640 L 600,665 L 588,640 Z"/>
+      </svg>
+      <div class="stage__manta-glass"></div>
+    </div>
   </div>
 
   <!-- ============================================================
-       HERO — stacked left-aligned headline weaving through the manta
-       Layering trick (now actually working at the document level):
+       HERO
+       Layering (now actually working at the document level):
          .hero__headline--back  → z-index: 1   (BEHIND manta, lensed)
-         .stage__manta          → z-index: 2   (the glass)
+         .stage__manta-follow   → z-index: 2   (the glass)
          .hero__headline--front → z-index: 3   (IN FRONT of manta, crisp)
        ============================================================ -->
   <section class="hero">
 
-    <!-- Headline lines that should sit BEHIND the manta wings -->
     <h1 class="hero__headline hero__headline--back" aria-hidden="true">
       <span class="line line--make"><span class="word" data-reveal>Move</span></span>
       <span class="line line--good"><span class="word" data-reveal>The</span></span>
     </h1>
 
-    <!-- Headline lines that sit IN FRONT of the manta wings -->
     <h1 class="hero__headline hero__headline--front">
       <span class="line line--we"><span class="word" data-reveal>We</span></span>
       <span class="line line--shit"><span class="word" data-reveal>Deep<span class="period">.</span></span></span>
-
-      <!-- Visually-hidden full headline for screen readers -->
       <span class="visually-hidden">We Move The Deep.</span>
     </h1>
 
-    <!-- Showreel cue -->
     <a href="#vision" class="hero__reel" data-reveal>
       <span class="hero__reel-arrow">›</span>
       <span class="hero__reel-text">Our Showreel</span>
@@ -104,7 +98,7 @@
   </section>
 
   <!-- ============================================================
-       INTRO COPY (lives just below hero, like the reference)
+       INTRO COPY
        ============================================================ -->
   <section class="intro">
     <p class="intro__lede" data-reveal>
