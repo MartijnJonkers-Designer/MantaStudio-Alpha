@@ -1,43 +1,32 @@
 /* ============================================================
-   MANTA WORKS — v5 (Marc Friedman / Brutalist Grid)
+   MANTA WORKS — v5 (Marc Friedman strict-grid app)
 
-   - 12-column grid per section, hairline 1px borders between sections
-   - Geist Mono for EVERYTHING
-   - Headline 25vw / line-height 0.8 — uncomfortably large
-   - Manta demoted to a hover-expanding component panel in the hero sidebar
-   - Clip-path scroll reveals (top-down wipe, expo.out, 0.8s)
-   - Menu interactive blocks: instant snap to mint bg + black text
-   - Strict monochrome, mint reserved for data + hover only
-   - DELETED: stage / aurora / dither / particles / grain / vignette /
-              manta-follow / manta-floating / mouse-glow
+   - 4-col x 6-row CSS grid, 1px white borders between every cell
+     (achieved via grid gap + container background-color)
+   - Geist Mono for everything
+   - Headline 25vw / weight 900 / line-height 0.7 in the top-left cell
+   - Manta is a tiny currentColor wireframe icon in the DATA cell
+   - Cell hover: instant snap to mint bg + black text
+   - Mint crosshair cursor (native cursor: none)
    ============================================================ */
 
 :root {
   --c-bg:        #000000;
   --c-ink:       #FFFFFF;
   --c-ink-soft:  #B8BCC8;
-  --c-ink-mute:  #5A5C66;
-  --c-line:      rgba(255, 255, 255, 0.10);
-  --c-line-soft: rgba(255, 255, 255, 0.05);
+  --c-ink-mute:  #6A6E7A;
   --c-accent:    #7CFFCB;
 
   --f-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --pad-x: clamp(20px, 4vw, 56px);
-  --grid-size: 80px;
-
-  --ease: cubic-bezier(.16, 1, .3, 1);
+  --pad-x: clamp(16px, 2.4vw, 32px);
+  --pad-y: clamp(14px, 1.6vw, 22px);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
 body {
-  background-color: var(--c-bg);
-  background-image:
-    linear-gradient(to right,  var(--c-line-soft) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--c-line-soft) 1px, transparent 1px);
-  background-size: var(--grid-size) var(--grid-size);
-  background-attachment: fixed;
+  background: var(--c-bg);
   color: var(--c-ink);
   font-family: var(--f-mono);
   font-size: 14px;
@@ -51,15 +40,8 @@ body {
 @media (pointer: coarse) { body { cursor: auto; } }
 ::selection { background: var(--c-ink); color: var(--c-bg); }
 
-.visually-hidden {
-  position: absolute !important;
-  width: 1px; height: 1px; padding: 0;
-  margin: -1px; overflow: hidden;
-  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-}
-
 /* ============================================================
-   CURSOR — mint crosshair (precision tool, not floating decoration)
+   CURSOR — mint crosshair
    ============================================================ */
 .cursor {
   position: fixed;
@@ -73,455 +55,273 @@ body {
     translate(-50%, -50%);
 }
 .cursor::before, .cursor::after {
-  content: ""; position: absolute;
-  background: var(--c-accent);
+  content: ""; position: absolute; background: var(--c-accent);
 }
 .cursor::before { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-50%); }
 .cursor::after  { top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); }
 @media (pointer: coarse) { .cursor { display: none; } }
 
 /* ============================================================
-   HUD — bordered tracker panel
+   APP — 4-col x 6-row grid
+   Cells separated by 1px white via grid gap + container background.
+   Container's padding: 1px gives the outer 1px border.
    ============================================================ */
-.hud {
-  position: fixed;
-  top: 80px;
-  right: var(--pad-x);
-  z-index: 49;
-  border: 1px solid var(--c-ink);
+.app {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  /* row 1 nav (auto), rows 2-5 main (1fr each), row 6 footer (auto).
+     Headline forces row sizing; min-height keeps it >= viewport. */
+  grid-template-rows: auto 1fr 1fr 1fr 1fr auto;
+  gap: 1px;
+  background: var(--c-ink);
+  padding: 1px;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   CELLS — universal styling + instant hover snap
+   ============================================================ */
+.cell {
   background: var(--c-bg);
-  padding: 8px 12px;
+  color: var(--c-ink);
+  padding: var(--pad-y) var(--pad-x);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  font-family: var(--f-mono);
+  position: relative;
+  transition: none;            /* INSTANT hover per the brief */
+}
+.cell:hover {
+  background: var(--c-accent);
+  color: var(--c-bg);
+}
+/* All cell text/SVG inherits color via currentColor so the flip is total */
+.cell:hover * { color: inherit; }
+
+/* Cell label — small tech tag at the top of most cells */
+.cell__label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--c-accent);
+}
+.cell__sub {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--c-ink-mute);
+  margin-top: auto;
+}
+.cell__name {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--c-ink);
+}
+
+/* ============================================================
+   NAV CELLS
+   ============================================================ */
+.cell--brand .cell__label {
+  color: var(--c-ink);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+.cell--brand .cell__sub {
+  margin-top: 4px;
+}
+.cell--nav {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 14px;
+}
+.cell--nav .cell__index {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--c-accent);
+}
+.cell--nav .cell__name {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+
+/* ============================================================
+   HEADLINE CELL — spans rows 2-5 cols 1-3
+   25vw / weight 900 / line-height 0.7 — uncomfortably large.
+   On 1080p displays the 4-line headline is taller than the
+   available viewport area; the cell grows to fit it (min-height
+   on the app keeps things at least viewport-tall, but content
+   can extend past). Slight scroll on most desktops.
+   ============================================================ */
+.cell--headline {
+  grid-column: 1 / 4;
+  grid-row: 2 / 6;
+  padding: clamp(20px, 3vw, 40px) var(--pad-x);
+  overflow: hidden;            /* clip if it overflows the cell */
+  align-items: flex-start;
+}
+.headline {
+  font-family: var(--f-mono);
+  font-size: 25vw;
+  line-height: 0.7;
+  font-weight: 900;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+  color: inherit;
+  width: 100%;
+}
+.headline .line {
+  display: block;
+}
+
+/* ============================================================
+   SIDEBAR CELLS (col 4, rows 2-5)
+   ============================================================ */
+.cell--data .cell__manta {
+  width: 100%;
+  margin: 16px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cell--data .cell__manta svg {
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+  display: block;
+  color: var(--c-ink);
+}
+.cell:hover .cell--data .cell__manta svg,
+.cell--data:hover .cell__manta svg { color: var(--c-bg); }
+.cell__specs {
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  pointer-events: none;
-  text-align: right;
+  margin-top: auto;
 }
-.hud__row { display: inline-flex; gap: 12px; justify-content: flex-end; }
-.hud__label { color: var(--c-ink-mute); }
-.hud__val   { color: var(--c-accent); min-width: 7ch; }
-
-/* ============================================================
-   NAV — 12-col grid, bordered, instant-snap menu items
-   ============================================================ */
-.nav {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  align-items: stretch;
-  border-bottom: 1px solid var(--c-ink);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  z-index: 50;
-}
-.nav__brand {
-  grid-column: 1 / 4;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 18px var(--pad-x);
-  text-decoration: none;
-  color: var(--c-ink);
-  border-right: 1px solid var(--c-line);
-}
-.nav__brand-mark { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; }
-.nav__brand-sub { font-size: 10px; color: var(--c-ink-mute); margin-top: 4px; }
-.nav__menu {
-  grid-column: 4 / 11;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-}
-.nav__menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 20px;
-  text-decoration: none;
-  color: var(--c-ink);
-  border-right: 1px solid var(--c-line);
-  transition: none;                 /* INSTANT snap per the brief */
-}
-.nav__menu-item span:first-child { color: var(--c-accent); }
-.nav__menu-item:hover {
-  background: var(--c-accent);
-  color: var(--c-bg);
-}
-.nav__menu-item:hover span:first-child { color: var(--c-bg); }
-.nav__version {
-  grid-column: 11 / 13;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 18px var(--pad-x);
-  color: var(--c-accent);
-}
-
-/* ============================================================
-   HERO — 12-col grid. Headline cols 1-8, sidebar cols 9-12.
-   Headline at 25vw / line-height 0.8 — hero will overflow on most
-   viewports. That's the point.
-   ============================================================ */
-.hero {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  align-items: stretch;
-  border-bottom: 1px solid var(--c-ink);
-  position: relative;
-}
-.hero__headline {
-  grid-column: 1 / 9;
-  font-family: var(--f-mono);
-  font-size: 25vw;
-  line-height: 0.8;
-  letter-spacing: -0.06em;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 32px var(--pad-x) 32px;
-  border-right: 1px solid var(--c-line);
-  align-self: start;
-  margin-top: 60px;
-}
-.hero__headline .line {
-  display: block;
-  /* clip-path initial state for GSAP reveal */
-}
-.hero__sidebar {
-  grid-column: 9 / 13;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-  padding: 32px var(--pad-x) 32px 32px;
-  align-self: start;
-  margin-top: 60px;
-}
-
-/* Manta panel — component, not character. Hover scale + reveal specs. */
-.manta-panel {
-  border: 1px solid var(--c-ink);
-  background: var(--c-bg);
-  padding: 12px;
-  position: relative;
-  z-index: 5;
-  transform-origin: top right;
-  transition: transform 120ms var(--ease);
-  pointer-events: auto;
-}
-.manta-panel:hover { transform: scale(1.6); z-index: 6; }
-.manta-panel__header,
-.manta-panel__footer {
+.cell__specs li {
   display: flex;
   justify-content: space-between;
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
   color: var(--c-ink-mute);
 }
-.manta-panel__header { padding-bottom: 8px; border-bottom: 1px solid var(--c-line); }
-.manta-panel__footer { padding-top: 8px; border-top: 1px solid var(--c-line); }
-.manta-panel__status { color: var(--c-accent); }
-.manta-panel__viewport {
-  width: 100%;
-  aspect-ratio: 3 / 2;
-  margin: 8px 0;
-}
-.manta-panel__viewport svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.manta-panel__details {
-  list-style: none;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--c-line);
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px 12px;
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--c-ink-mute);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms var(--ease);
-}
-.manta-panel__details li {
-  display: flex;
-  justify-content: space-between;
-}
-.manta-panel__details li span:last-child { color: var(--c-accent); }
-.manta-panel:hover .manta-panel__details { opacity: 1; }
+.cell__specs li span:last-child { color: var(--c-accent); }
+.cell--data:hover .cell__specs li,
+.cell--data:hover .cell__specs li span { color: var(--c-bg); }
 
-.hero__lede {
+.cell--about .cell__body {
   font-size: 13px;
-  line-height: 1.55;
-  color: var(--c-ink-soft);
-  letter-spacing: 0.01em;
-}
-
-.hero__reel {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--c-ink);
-  align-self: flex-start;
-}
-.hero__reel-arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px; height: 22px;
-  border: 1px solid var(--c-ink);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1;
-  transition: none;
-}
-.hero__reel:hover { color: var(--c-accent); }
-.hero__reel:hover .hero__reel-arrow {
-  background: var(--c-accent);
-  color: var(--c-bg);
-  border-color: var(--c-accent);
-}
-
-/* ============================================================
-   INTRO — 12-col grid. Lede cols 1-8, social cols 9-12.
-   ============================================================ */
-.intro {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  border-bottom: 1px solid var(--c-ink);
-}
-.intro__lede {
-  grid-column: 1 / 9;
-  padding: 80px var(--pad-x);
-  font-size: clamp(18px, 1.6vw, 22px);
   line-height: 1.5;
   color: var(--c-ink);
-  border-right: 1px solid var(--c-line);
-}
-.intro__social {
-  grid-column: 9 / 13;
-  display: grid;
-  grid-template-rows: repeat(4, 1fr);
-  align-items: stretch;
-}
-.intro__social-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 24px;
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  text-decoration: none;
-  color: var(--c-ink);
-  border-bottom: 1px solid var(--c-line);
-  transition: none;
-}
-.intro__social-item:last-child { border-bottom: 0; }
-.intro__social-item span:first-child { color: var(--c-accent); }
-.intro__social-item:hover {
-  background: var(--c-accent);
-  color: var(--c-bg);
-}
-.intro__social-item:hover span:first-child { color: var(--c-bg); }
-
-/* ============================================================
-   SECTIONS — 12-col grid. Index 1-2, title 3-8, body 9-12.
-   ============================================================ */
-.section {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  align-items: start;
-  border-bottom: 1px solid var(--c-ink);
-  padding: 120px 0 120px;
-}
-.section__index {
-  grid-column: 1 / 3;
-  padding: 0 var(--pad-x);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--c-accent);
-}
-.section__title {
-  grid-column: 3 / 9;
-  font-family: var(--f-mono);
-  font-size: clamp(40px, 7vw, 120px);
-  font-weight: 600;
-  line-height: 0.95;
-  letter-spacing: -0.04em;
-  padding-right: 32px;
-}
-.section__title--giant { font-size: clamp(56px, 10vw, 180px); }
-.section__body {
-  grid-column: 9 / 13;
-  padding: 0 var(--pad-x) 0 32px;
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--c-ink-soft);
-  border-left: 1px solid var(--c-line);
-}
-.section__body p + p { margin-top: 1.4em; }
-.section__body em {
-  color: var(--c-accent);
-  font-style: normal;
-  font-weight: 500;
+  letter-spacing: 0.01em;
+  margin: auto 0;
 }
 
-/* ============================================================
-   SERVICES — list of bordered cells, 12-col internal layout per item
-   ============================================================ */
-.services {
-  grid-column: 1 / 13;
+.cell--services .cell__list {
   list-style: none;
-  margin-top: 60px;
-  border-top: 1px solid var(--c-line);
-}
-.services__item {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  align-items: baseline;
-  padding: 28px var(--pad-x);
-  border-bottom: 1px solid var(--c-line);
-  transition: background 80ms var(--ease);
-}
-.services__item:hover { background: rgba(124, 255, 203, 0.06); }
-.services__num {
-  grid-column: 1 / 3;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--c-accent);
-}
-.services__name {
-  grid-column: 3 / 7;
-  font-family: var(--f-mono);
-  font-size: clamp(20px, 2.4vw, 32px);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-.services__desc {
-  grid-column: 7 / 13;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--c-ink-soft);
-}
-
-/* ============================================================
-   FOOTER — 12-col grid. CTA cols 1-8, meta cols 9-12.
-   ============================================================ */
-.footer {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  border-top: 1px solid var(--c-ink);
-}
-.footer__cta {
-  grid-column: 1 / 9;
-  padding: 100px var(--pad-x);
-  border-right: 1px solid var(--c-line);
-}
-.footer__cta p {
-  font-size: clamp(14px, 1.4vw, 18px);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--c-ink-soft);
-  margin-bottom: 24px;
-}
-.footer__cta a {
-  display: inline-block;
-  font-family: var(--f-mono);
-  font-size: clamp(28px, 4.5vw, 64px);
-  font-weight: 500;
-  letter-spacing: -0.03em;
-  color: var(--c-ink);
-  text-decoration: none;
-  border-bottom: 1px solid var(--c-ink-mute);
-  padding-bottom: 4px;
-  transition: none;
-}
-.footer__cta a:hover {
-  color: var(--c-accent);
-  border-color: var(--c-accent);
-}
-.footer__meta {
-  grid-column: 9 / 13;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
 }
-.footer__meta span {
-  display: block;
-  padding: 12px 24px;
+.cell--services .cell__list li {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--c-ink);
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  padding-top: 8px;
+}
+.cell--services .cell__list li:first-child { border-top: 0; padding-top: 0; }
+.cell--services .cell__list li span:first-child { color: var(--c-accent); font-size: 10px; }
+.cell--services:hover .cell__list li,
+.cell--services:hover .cell__list li span { color: var(--c-bg); }
+.cell--services:hover .cell__list li { border-top-color: rgba(0, 0, 0, 0.15); }
+
+.cell--cta .cell__email {
+  font-size: clamp(18px, 1.6vw, 24px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--c-ink);
+  margin: auto 0 4px;
+  border-bottom: 1px solid var(--c-ink-mute);
+  padding-bottom: 4px;
+  align-self: flex-start;
+  word-break: break-all;
+}
+.cell--cta:hover .cell__email { border-bottom-color: var(--c-bg); }
+
+/* ============================================================
+   FOOTER CELLS (row 6)
+   ============================================================ */
+.cell--foot {
+  flex-direction: column;
+  gap: 4px;
   font-size: 10px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--c-accent);
-  border-bottom: 1px solid var(--c-line);
 }
-.footer__meta span:last-child { border-bottom: 0; }
+.cell--foot .cell__label { color: var(--c-ink-mute); }
+.cell--foot .cell__name { color: var(--c-ink); font-size: 11px; }
+.cell--hud em {
+  color: var(--c-accent);
+  font-style: normal;
+  font-weight: 500;
+  margin-left: 8px;
+}
+.cell--hud:hover em { color: var(--c-bg); }
 
 /* ============================================================
-   REVEALS — clip-path top-down wipe (Friedman scroll)
+   REVEALS — clip-path top-down wipe
+   Applied to specific inner content, not whole cells (cells are
+   the layout primitives — animating their clip would shift the grid).
    ============================================================ */
 [data-reveal] {
-  clip-path: inset(0 0 100% 0);   /* fully clipped from bottom — invisible */
+  clip-path: inset(0 0 100% 0);
 }
 
 /* ============================================================
-   RESPONSIVE
+   RESPONSIVE — collapse to 2 cols, then 1 col
    ============================================================ */
-@media (max-width: 960px) {
-  .nav { grid-template-columns: 1fr 1fr; }
-  .nav__brand { grid-column: 1 / 2; }
-  .nav__menu { display: none; }
-  .nav__version { grid-column: 2 / 3; }
-
-  .hero { grid-template-columns: 1fr; }
-  .hero__headline {
-    grid-column: 1 / 2;
-    border-right: 0;
-    border-bottom: 1px solid var(--c-line);
-    margin-top: 40px;
-    padding-bottom: 32px;
+@media (max-width: 1024px) {
+  .app {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto;
+    grid-auto-rows: minmax(140px, auto);
   }
-  .hero__sidebar {
-    grid-column: 1 / 2;
-    margin-top: 0;
-    padding: 32px var(--pad-x);
+  .cell--brand { grid-column: 1 / 3; }
+  .cell--nav   { grid-column: span 2 / auto; }
+  .cell--headline {
+    grid-column: 1 / 3;
+    grid-row: auto;
+    min-height: 70vh;
   }
-
-  .intro { grid-template-columns: 1fr; }
-  .intro__lede { grid-column: 1 / 2; border-right: 0; border-bottom: 1px solid var(--c-line); padding: 60px var(--pad-x); }
-  .intro__social { grid-column: 1 / 2; }
-
-  .section { grid-template-columns: 1fr; padding: 80px 0; }
-  .section__index { grid-column: 1 / 2; padding: 0 var(--pad-x) 24px; }
-  .section__title { grid-column: 1 / 2; padding: 0 var(--pad-x) 32px; }
-  .section__body  { grid-column: 1 / 2; padding: 0 var(--pad-x); border-left: 0; }
-
-  .services__item { grid-template-columns: 1fr; gap: 8px; }
-  .services__num, .services__name, .services__desc { grid-column: 1 / 2; }
-
-  .footer { grid-template-columns: 1fr; }
-  .footer__cta { grid-column: 1 / 2; border-right: 0; border-bottom: 1px solid var(--c-line); padding: 60px var(--pad-x); }
-  .footer__meta { grid-column: 1 / 2; }
+  .cell--data, .cell--about, .cell--services, .cell--cta {
+    grid-column: span 1;
+  }
+  .cell--foot { grid-column: span 1; }
 }
-
-@media (max-width: 760px) {
-  :root { --grid-size: 60px; }
-  .hud { top: 70px; font-size: 9px; padding: 6px 10px; }
-  .hero__headline { font-size: 22vw; }
+@media (max-width: 640px) {
+  .app { grid-template-columns: 1fr; }
+  .cell--brand,
+  .cell--nav,
+  .cell--headline,
+  .cell--data,
+  .cell--about,
+  .cell--services,
+  .cell--cta,
+  .cell--foot { grid-column: 1 / 2; }
+  .headline { font-size: 22vw; }
 }
 
 @media (prefers-reduced-motion: reduce) {

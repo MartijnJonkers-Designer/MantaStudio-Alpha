@@ -10,204 +10,116 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400..900&display=swap"
     rel="stylesheet"
   />
-
   <link rel="stylesheet" href="Styles.css" />
 </head>
 <body>
 
   <!-- ============================================================
-       NAV — 12-col internal grid, bordered
-       Menu items snap to mint bg + black text on hover (instant).
-       ============================================================ -->
-  <header class="nav">
-    <a href="#" class="nav__brand">
-      <span class="nav__brand-mark">MANTA</span>
-      <span class="nav__brand-sub">WORKS / V0.4</span>
-    </a>
-    <nav class="nav__menu">
-      <a href="#about"   class="nav__menu-item"><span>01</span><span>WORK</span></a>
-      <a href="#services"class="nav__menu-item"><span>02</span><span>STUDIO</span></a>
-      <a href="#contact" class="nav__menu-item"><span>03</span><span>CONTACT</span></a>
-    </nav>
-    <span class="nav__version">REV / 0004</span>
-  </header>
-
-  <!-- ============================================================
-       HUD — corner tracker, bordered panel
-       ============================================================ -->
-  <aside class="hud" aria-hidden="true">
-    <span class="hud__row"><span class="hud__label">LAT</span><span class="hud__val" id="hud-lat">+0.000</span></span>
-    <span class="hud__row"><span class="hud__label">LON</span><span class="hud__val" id="hud-lon">+0.000</span></span>
-    <span class="hud__row"><span class="hud__label">SYS</span><span class="hud__val">TRK / OK</span></span>
-  </aside>
-
-  <!-- ============================================================
-       CURSOR — mint crosshair, replaces native
+       CURSOR — mint crosshair (native cursor: none on body)
        ============================================================ -->
   <div class="cursor" id="cursor" aria-hidden="true"></div>
 
   <!-- ============================================================
-       HERO — 12-col grid. Headline cols 1-8, sidebar cols 9-12.
+       APP — 4-col x 6-row strict grid
+       Cells separated by 1px white via grid gap + container bg.
        ============================================================ -->
-  <section class="hero">
-    <h1 class="hero__headline">
-      <span class="line" data-reveal>We</span>
-      <span class="line" data-reveal>Move</span>
-      <span class="line" data-reveal>The</span>
-      <span class="line" data-reveal>Deep</span>
-    </h1>
+  <main class="app">
 
-    <aside class="hero__sidebar">
-      <!-- Manta as a technical data point: hover scales the panel up
-           and reveals the hidden spec list. Component, not character. -->
-      <figure class="manta-panel" data-reveal aria-hidden="true">
-        <div class="manta-panel__header">
-          <span>ENTITY / 0001</span>
-          <span class="manta-panel__status">ACTIVE</span>
-        </div>
-        <div class="manta-panel__viewport">
-          <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
-            <defs>
-              <pattern id="manta-mini-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
-                <path d="M 40 0 L 0 0 L 0 40" stroke="rgba(255,255,255,0.18)" stroke-width="0.8" fill="none"/>
-              </pattern>
-              <clipPath id="manta-mini-clip" clipPathUnits="userSpaceOnUse">
-                <path d="M 600,320 L 60,500 L 440,560 L 560,720 L 600,740 L 640,720 L 760,560 L 1140,500 Z"/>
-              </clipPath>
-            </defs>
-            <path d="M 600,320 L 60,500 L 440,560 L 560,720 L 600,740 L 640,720 L 760,560 L 1140,500 Z" fill="url(#manta-mini-grid)" />
-            <g clip-path="url(#manta-mini-clip)">
-              <line x1="600" y1="320" x2="600" y2="740" stroke="rgba(255,255,255,0.30)" stroke-width="1.2"/>
-              <line x1="60"  y1="500" x2="1140" y2="500" stroke="rgba(255,255,255,0.20)" stroke-width="1" stroke-dasharray="6 8"/>
-            </g>
-            <path d="M 600,320 L 60,500 L 440,560 L 560,720 L 600,740 L 640,720 L 760,560 L 1140,500 Z" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
-          </svg>
-        </div>
-        <figcaption class="manta-panel__footer">
-          <span>TYP / STEALTH-WEDGE</span>
-          <span>v.04</span>
-        </figcaption>
-        <ul class="manta-panel__details">
-          <li><span>WSPN</span><span>1080U</span></li>
-          <li><span>LEN</span><span>420U</span></li>
-          <li><span>PITCH</span><span>+0.0°</span></li>
-          <li><span>YAW</span><span>+0.0°</span></li>
-        </ul>
-      </figure>
+    <!-- ROW 1: NAV ============================================== -->
+    <a href="#" class="cell cell--brand">
+      <span class="cell__label">MANTA</span>
+      <span class="cell__sub">/ WORKS · V0.5</span>
+    </a>
+    <a href="#about" class="cell cell--nav">
+      <span class="cell__index">01</span>
+      <span class="cell__name">WORK</span>
+    </a>
+    <a href="#services" class="cell cell--nav">
+      <span class="cell__index">02</span>
+      <span class="cell__name">STUDIO</span>
+    </a>
+    <a href="#contact" class="cell cell--nav">
+      <span class="cell__index">03</span>
+      <span class="cell__name">CONTACT</span>
+    </a>
 
-      <p class="hero__lede" data-reveal>
-        Manta Works — a multidisciplinary creative studio at the intersection
-        of art, design, and technology.
+    <!-- ROWS 2-5 COLS 1-3: HEADLINE =========================== -->
+    <div class="cell cell--headline">
+      <h1 class="headline">
+        <span class="line" data-reveal>We</span>
+        <span class="line" data-reveal>Move</span>
+        <span class="line" data-reveal>The</span>
+        <span class="line" data-reveal>Deep</span>
+      </h1>
+    </div>
+
+    <!-- ROWS 2-5 COL 4: SIDEBAR ================================ -->
+    <div class="cell cell--data">
+      <span class="cell__label">DATA / 0001</span>
+      <div class="cell__manta" data-reveal aria-hidden="true">
+        <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
+          <path d="M 600,320 L 60,500 L 440,560 L 560,720 L 600,740 L 640,720 L 760,560 L 1140,500 Z"
+                fill="none" stroke="currentColor" stroke-width="6"
+                vector-effect="non-scaling-stroke" stroke-linejoin="miter" />
+        </svg>
+      </div>
+      <ul class="cell__specs">
+        <li><span>TYP</span><span>STEALTH-WEDGE</span></li>
+        <li><span>WSPN</span><span>1080U</span></li>
+        <li><span>LEN</span><span>420U</span></li>
+      </ul>
+    </div>
+
+    <div class="cell cell--about">
+      <span class="cell__label">01 / ABOUT</span>
+      <p class="cell__body" data-reveal>
+        A studio built like a reef. Multidisciplinary creative work at the
+        intersection of art, design, and technology.
       </p>
-
-      <a href="#vision" class="hero__reel" data-reveal>
-        <span class="hero__reel-arrow">+</span>
-        <span>SHOWREEL / 03:42</span>
-      </a>
-    </aside>
-  </section>
-
-  <!-- ============================================================
-       INTRO
-       ============================================================ -->
-  <section class="intro">
-    <p class="intro__lede" data-reveal>
-      Brand systems, digital products, and editorial worlds for clients
-      building for the long tide.
-    </p>
-    <div class="intro__social" data-reveal>
-      <a href="#" class="intro__social-item"><span>01</span><span>INSTAGRAM</span></a>
-      <a href="#" class="intro__social-item"><span>02</span><span>ARE.NA</span></a>
-      <a href="#" class="intro__social-item"><span>03</span><span>READ.CV</span></a>
-      <a href="#" class="intro__social-item"><span>04</span><span>EMAIL</span></a>
+      <span class="cell__sub">EST. MMXXVI / AMS-NL</span>
     </div>
-  </section>
 
-  <!-- ============================================================
-       ABOUT
-       ============================================================ -->
-  <section class="section section--about" id="about">
-    <div class="section__index" data-reveal>01 / ABOUT</div>
-    <h2 class="section__title" data-reveal>A studio built like a reef.</h2>
-    <div class="section__body">
-      <p data-reveal>
-        We work in long, slow strokes. Coral builds a coastline grain by grain,
-        and the best work — the kind that outlasts a season — is built the same way.
-      </p>
-      <p data-reveal>
-        Every word, mark, and motion is considered. We choose <em>presence over polish</em>
-        and depth over surface noise.
-      </p>
+    <div class="cell cell--services">
+      <span class="cell__label">02 / SERVICES</span>
+      <ul class="cell__list">
+        <li><span>001</span><span>Brand Identity</span></li>
+        <li><span>002</span><span>Digital Product</span></li>
+        <li><span>003</span><span>Editorial &amp; Print</span></li>
+        <li><span>004</span><span>Creative Direction</span></li>
+      </ul>
     </div>
-  </section>
 
-  <!-- ============================================================
-       SERVICES
-       ============================================================ -->
-  <section class="section section--services" id="services">
-    <div class="section__index" data-reveal>02 / SERVICES</div>
-    <h2 class="section__title" data-reveal>What we tend to.</h2>
+    <a href="mailto:hello@mantaworks.studio" class="cell cell--cta">
+      <span class="cell__label">03 / CONTACT</span>
+      <p class="cell__email" data-reveal>hello@mantaworks.studio</p>
+      <span class="cell__sub">SHOWREEL / 03:42</span>
+    </a>
 
-    <ul class="services">
-      <li class="services__item" data-reveal>
-        <span class="services__num">001</span>
-        <h3 class="services__name">Brand Identity</h3>
-        <p class="services__desc">Marks, type systems, voice, and the architecture that holds them together.</p>
-      </li>
-      <li class="services__item" data-reveal>
-        <span class="services__num">002</span>
-        <h3 class="services__name">Digital Product</h3>
-        <p class="services__desc">Interfaces and experiences engineered for clarity and quiet confidence.</p>
-      </li>
-      <li class="services__item" data-reveal>
-        <span class="services__num">003</span>
-        <h3 class="services__name">Editorial &amp; Print</h3>
-        <p class="services__desc">Books, reports, and printed matter for institutions that still believe in paper.</p>
-      </li>
-      <li class="services__item" data-reveal>
-        <span class="services__num">004</span>
-        <h3 class="services__name">Creative Direction</h3>
-        <p class="services__desc">Long-form partnerships for founders building the next decade, not the next quarter.</p>
-      </li>
-    </ul>
-  </section>
-
-  <!-- ============================================================
-       VISION
-       ============================================================ -->
-  <section class="section section--vision" id="vision">
-    <div class="section__index" data-reveal>03 / VISION</div>
-    <h2 class="section__title section__title--giant" data-reveal>We make things that last.</h2>
-    <div class="section__body">
-      <p data-reveal>
-        In a culture optimised for the immediate, we choose the durable.
-        Things meant to be discovered, returned to, and quietly admired —
-        long after the launch noise has faded.
-      </p>
+    <!-- ROW 6: FOOTER ========================================== -->
+    <div class="cell cell--foot">
+      <span class="cell__label">© MMXXVI</span>
+      <span class="cell__name">MANTA WORKS</span>
     </div>
-  </section>
+    <div class="cell cell--foot">
+      <span class="cell__label">LOC</span>
+      <span class="cell__name">52.234 N / 5.176 E</span>
+    </div>
+    <div class="cell cell--foot cell--hud">
+      <span class="cell__label">TRK</span>
+      <span class="cell__name">LAT <em id="hud-lat">+0.000</em></span>
+      <span class="cell__name">LON <em id="hud-lon">+0.000</em></span>
+    </div>
+    <div class="cell cell--foot">
+      <span class="cell__label">REV</span>
+      <span class="cell__name">0005 / FRIEDMAN</span>
+    </div>
 
-  <!-- ============================================================
-       FOOTER
-       ============================================================ -->
-  <footer class="footer" id="contact">
-    <div class="footer__cta">
-      <p data-reveal>Have a tide worth turning?</p>
-      <a href="mailto:hello@mantaworks.studio" data-reveal>hello@mantaworks.studio</a>
-    </div>
-    <div class="footer__meta">
-      <span>© MMXXVI / MANTA WORKS</span>
-      <span>52.234 N / 5.176 E</span>
-      <span>V0.4 / FRIEDMAN</span>
-      <span>REV / 0004</span>
-    </div>
-  </footer>
+  </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
   <script src="particles.js"></script>
   <script src="main.js"></script>
 </body>
