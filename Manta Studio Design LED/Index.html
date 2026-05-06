@@ -15,6 +15,17 @@
   />
 
   <link rel="stylesheet" href="Styles.css" />
+
+  <!-- Import map: lets main.js import "three" as a bare specifier
+       (resolves to the CDN URL below). 2026-standard ESM approach;
+       pinning lives here so version bumps stay in one place. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js"
+    }
+  }
+  </script>
 </head>
 <body>
 
@@ -24,8 +35,7 @@
   <!-- Headline overlay. Z-index 1, pointer-events disabled. -->
   <h1 class="headline">WE MOVE THE DEEP</h1>
 
-  <!-- main.js is an ES module — imports Three.js directly from the CDN URL.
-       No importmap required. -->
+  <!-- main.js is an ES module — Three.js resolved via the importmap above. -->
   <script type="module" src="main.js"></script>
 </body>
 </html>

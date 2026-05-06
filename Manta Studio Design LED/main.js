@@ -7,7 +7,9 @@
    and the render loop is ticking. Liquid logic comes in later steps.
    ============================================================ */
 
-import * as THREE from "https://unpkg.com/three@0.170.0/build/three.module.js";
+/* "three" resolves via the importmap declared in Index.html.
+   Pinning lives there so a version bump only touches one file. */
+import * as THREE from "three";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
