@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#070d12" />
+  <meta name="theme-color" content="#000000" />
   <title>Manta Works — We Move The Deep</title>
   <meta name="description" content="Manta Works is a creative studio operating at the intersection of design, technology, and the deep." />
 
@@ -20,9 +20,8 @@
 <body>
 
   <!-- ============================================================
-       FIXED STAGE — ambient atmosphere only.
-       Layers in z-order: gradient → aurora → dither → particles → grain → vignette.
-       The manta lives in its own body-level layer below.
+       FIXED STAGE — ambient atmosphere only (monochrome).
+       Layer order: gradient → aurora → dither → particles → grain → vignette.
        ============================================================ -->
   <div class="stage" aria-hidden="true">
     <div class="stage__gradient"></div>
@@ -51,32 +50,51 @@
   </header>
 
   <!-- ============================================================
-       LIQUID MANTA — refractive glass silhouette
+       HUD — corner tracker readouts
+       Tiny mint monospace numbers updating with cursor position.
+       The ONE place mint is allowed (other than mouse-glow + footer coords).
+       ============================================================ -->
+  <aside class="hud" aria-hidden="true">
+    <span class="hud__row"><span class="hud__label">LAT</span><span class="hud__val" id="hud-lat">+0.000</span></span>
+    <span class="hud__row"><span class="hud__label">LON</span><span class="hud__val" id="hud-lon">+0.000</span></span>
+    <span class="hud__row"><span class="hud__label">SYS</span><span class="hud__val">TRK</span></span>
+  </aside>
+
+  <!-- ============================================================
+       LIQUID MANTA — stealth-wedge silhouette
        Two-layer transform stack:
-         .stage__manta-follow  — outer, JS-driven mouse-follow via CSS var
-         .stage__manta         — inner, GSAP-driven parallax + breath
+         .stage__manta-follow  outer wrapper. JS-driven mouse-follow translate.
+         .stage__manta         inner. GSAP-driven parallax + breath + tilt.
        The two transforms compose multiplicatively.
        ============================================================ -->
   <div class="stage__manta-follow" id="manta-follow" aria-hidden="true">
     <div class="stage__manta" id="manta">
       <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet" class="stage__manta-svg">
         <defs>
+          <!-- 8-vertex stealth wedge. objectBoundingBox units (0..1).
+               Vertices: nose top → left wingtip → left trailing inflection →
+               left tail base → tail tip → right tail base → right trailing
+               inflection → right wingtip → close. -->
           <clipPath id="manta-clip" clipPathUnits="objectBoundingBox">
-            <path d="M 0.05,0.525 C 0.18333,0.325 0.35,0.3 0.5,0.4125 C 0.65,0.3 0.81667,0.325 0.95,0.525 C 0.81667,0.5875 0.65,0.55 0.5,0.5 C 0.35,0.55 0.18333,0.5875 0.05,0.525 Z M 0.5,0.5125 L 0.51,0.8 L 0.5,0.83125 L 0.49,0.8 Z"/>
+            <path d="M 0.5,0.4 L 0.05,0.625 L 0.3667,0.7 L 0.4667,0.9 L 0.5,0.925 L 0.5333,0.9 L 0.6333,0.7 L 0.95,0.625 Z"/>
           </clipPath>
         </defs>
-        <path class="stage__manta-rim" d="M 60,420 C 220,260 420,240 600,330 C 780,240 980,260 1140,420 C 980,470 780,440 600,400 C 420,440 220,470 60,420 Z M 600,410 L 612,640 L 600,665 L 588,640 Z"/>
+        <!-- Rim hairline in user-space coords matches the clipPath shape. -->
+        <path class="stage__manta-rim" d="M 600,320 L 60,500 L 440,560 L 560,720 L 600,740 L 640,720 L 760,560 L 1140,500 Z"/>
       </svg>
       <div class="stage__manta-glass"></div>
     </div>
   </div>
 
   <!-- ============================================================
+       MOUSE-GLOW — mint reticle that follows the cursor
+       Body-level so it can paint above the manta and headline.
+       JS lerp factor 0.18 (faster than manta) for the reticle feel.
+       ============================================================ -->
+  <div class="mouse-glow" id="mouse-glow" aria-hidden="true"></div>
+
+  <!-- ============================================================
        HERO
-       Layering (now actually working at the document level):
-         .hero__headline--back  → z-index: 1   (BEHIND manta, lensed)
-         .stage__manta-follow   → z-index: 2   (the glass)
-         .hero__headline--front → z-index: 3   (IN FRONT of manta, crisp)
        ============================================================ -->
   <section class="hero">
 

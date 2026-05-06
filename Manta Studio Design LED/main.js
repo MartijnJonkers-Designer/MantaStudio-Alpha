@@ -2,7 +2,7 @@
    MAIN — GSAP choreography
    - Hero word reveal (synchronised across back/front halves)
    - Section reveals on scroll
-   - Manta parallax + ambient drift
+   - Manta parallax + ambient drift + mouse-driven tilt
    ============================================================ */
 
 (function () {
@@ -11,16 +11,7 @@
 
   const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* -------- HERO WORD REVEAL --------
-     The words live across two separate <h1>s (one behind the manta,
-     one in front), but the user should perceive ONE continuous motion.
-     We do this in three steps:
-       1. Build a single ordered array following reading order.
-       2. Set their initial state explicitly inside the same timeline,
-          so there's no flash if fonts load late.
-       3. Use a single timeline with a tight stagger so each word
-          starts before the previous finishes — overlapping motion
-          reads as one flowing reveal rather than four discrete ones. */
+  /* -------- HERO WORD REVEAL -------- */
   const orderedWords = [
     ...document.querySelectorAll(".line--we .word"),
     ...document.querySelectorAll(".line--make .word"),
@@ -33,20 +24,13 @@
       gsap.set(orderedWords, { y: 0, opacity: 1 });
     } else {
       const heroTL = gsap.timeline({ delay: 0.3 });
-
-      // Lock the initial state in the same timeline so a late-loading
-      // font can never produce a flash of fully-revealed words.
       heroTL.set(orderedWords, { yPercent: 110, opacity: 0 });
-
       heroTL.to(orderedWords, {
         yPercent: 0,
         opacity: 1,
         duration: 1.1,
         ease: "power3.out",
-        stagger: {
-          each: 0.09,        // tight enough that motion overlaps
-          from: "start",
-        },
+        stagger: { each: 0.09, from: "start" },
       });
     }
   }
@@ -61,8 +45,7 @@
     });
   }
 
-  /* -------- SECTION REVEALS --------
-     Sections slide up over the fixed manta as the user scrolls. */
+  /* -------- SECTION REVEALS -------- */
   gsap.utils.toArray("section [data-reveal], footer [data-reveal]").forEach((el) => {
     gsap.to(el, {
       opacity: 1, y: 0,
@@ -75,10 +58,13 @@
     });
   });
 
-  /* -------- MANTA PARALLAX + AMBIENT DRIFT -------- */
+  /* -------- MANTA PARALLAX + AMBIENT DRIFT + TILT --------
+     Three concurrent GSAP animations on the same #manta element.
+     yPercent (parallax) + y (breath) + rotation (tilt) compose as separate
+     transform components into a single matrix per tick — no fighting. */
   const manta = document.getElementById("manta");
   if (manta && !prefersReduced) {
-    // Slow parallax tied to page scroll
+    // Slow scroll-driven parallax
     gsap.to(manta, {
       yPercent: 14,
       scale: 1.06,
@@ -91,7 +77,7 @@
       },
     });
 
-    // Ambient breath — keeps it alive even when not scrolling
+    // Ambient breath — keeps the silhouette alive when not scrolling
     gsap.to(manta, {
       y: 14,
       duration: 7,
@@ -99,11 +85,20 @@
       yoyo: true,
       repeat: -1,
     });
+
+    // Tilt — cursor x maps to ±5deg lean. quickTo tweens smoothly
+    // toward each new target without queueing up tweens per pointermove.
+    const rotateTo = gsap.quickTo(manta, "rotation", {
+      duration: 0.7,
+      ease: "power2.out",
+    });
+    window.addEventListener("pointermove", (e) => {
+      // (clientX/innerWidth - 0.5) is in -0.5..+0.5 → multiply by 10 for ±5deg
+      rotateTo(((e.clientX / window.innerWidth) - 0.5) * 10);
+    }, { passive: true });
   }
 
-  /* -------- HERO HEADLINE COUNTER-PARALLAX --------
-     Headline drifts up slightly faster than the manta, deepening the layer effect.
-     Both back and front headline halves move identically so the weave is preserved. */
+  /* -------- HERO HEADLINE COUNTER-PARALLAX -------- */
   const headlines = document.querySelectorAll(".hero__headline");
   if (headlines.length && !prefersReduced) {
     gsap.to(headlines, {

@@ -1,42 +1,38 @@
 /* ============================================================
-   MANTA WORKS — Editorial landing v2 (Liquid Glass refit)
+   MANTA WORKS — Editorial landing v3 (Stealth / Laboratory refit)
    - Geist headline, stacked left, weaves through manta via z-index
-   - Neutral near-black ground + chromatic-dispersion bloom
-   - High-density canvas particles repulsed by the manta
-   - Dithered aurora overlay for cinematic grain
-   - Liquid Manta: clip-path glass shape with backdrop-filter lensing
+   - Pure-black ground, monochrome bloom, sensor-grain particles
+   - Mint reserved for HUD numerals + cursor reticle (Monochrome + 1)
+   - Stealth-wedge geometric manta with white LED halo
    ============================================================ */
 
 :root {
-  /* Colour — Liquid Glass (neutral near-black + chromatic bloom) */
-  --c-bg-1:     #05060A;
-  --c-bg-2:     #0C0E14;
-  --c-bg-3:     #181B24;
+  /* Colour — Stealth (pure-black ground, white ink, mint reserved for HUD/glow) */
+  --c-bg-1:     #000000;
+  --c-bg-2:     #08090C;
+  --c-bg-3:     #14151A;
   --c-ink:      #F5F5F5;
   --c-ink-soft: #B8BCC8;
-  --c-ink-mute: #6A6E7A;
-  --c-accent:   #7CFFCB;
-  --c-bloom-1:  #38BDF8;
-  --c-bloom-2:  #C77DFF;
+  --c-ink-mute: #5A5C66;
+  --c-accent:   #7CFFCB;   /* mint — HUD numerals + mouse-glow ONLY */
 
-  /* Type — Geist (canonical MantaStudio system) */
+  /* Type — Geist */
   --f-display: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --f-ui:      "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --f-mono:    "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Glass surface */
   --glass-tint:     rgba(255, 255, 255, 0.06);
-  --glass-border:   rgba(255, 255, 255, 0.12);
+  --glass-border:   rgba(255, 255, 255, 0.18);  /* slightly stronger — stealth wedge needs a crisper edge */
   --glass-blur:     28px;
-  --glass-saturate: 160%;
-  --glass-noise:    0.025;
+  --glass-saturate: 130%;
 
-  /* LED bloom */
-  --glow-color:      var(--c-accent);
+  /* LED bloom — white, not mint (Monochrome + 1) */
+  --glow-color:      var(--c-ink);
   --glow-radius-sm:  0 0 18px;
   --glow-radius-md:  0 0 36px;
   --glow-radius-lg:  0 0 80px;
-  --glow-strength:   0.55;
+  --glow-strength:   0.45;
 
   /* Layout */
   --pad-x: clamp(20px, 5vw, 64px);
@@ -58,7 +54,7 @@ body {
   -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
 }
-::selection { background: var(--c-accent); color: var(--c-bg-1); }
+::selection { background: var(--c-ink); color: var(--c-bg-1); }
 
 .visually-hidden {
   position: absolute !important;
@@ -68,10 +64,8 @@ body {
 }
 
 /* ============================================================
-   STAGE — fixed background container (ambience only).
+   STAGE — fixed background container (monochrome ambience).
    Layer order: gradient → aurora → dither → particles → grain → vignette.
-   The manta lives outside this stage in its own body-level layer
-   so its backdrop-filter can sample headline--back through it.
    ============================================================ */
 .stage {
   position: fixed;
@@ -88,16 +82,16 @@ body {
     radial-gradient(ellipse 80% 60% at 50% 35%, var(--c-bg-3) 0%, var(--c-bg-2) 40%, var(--c-bg-1) 80%);
 }
 
-/* Aurora — chromatic-dispersion bloom (cyan + violet via --c-bloom-*).
-   Smooth gradients on their own read "digital." The .stage__dither layer
-   above adds the cinematic grain that breaks up the smoothness. */
+/* Aurora — monochrome white bloom. Three radial gradients at low alpha so the
+   field reads as faint atmospheric variation, not chromatic dispersion. The
+   .stage__dither layer above adds the cinematic noise. */
 .stage__aurora {
   position: absolute;
   inset: -10%;
   background:
-    radial-gradient(circle at 30% 25%, rgb(from var(--c-bloom-1) r g b / 0.55) 0%, transparent 35%),
-    radial-gradient(circle at 75% 35%, rgb(from var(--c-bloom-2) r g b / 0.55) 0%, transparent 40%),
-    radial-gradient(circle at 60% 55%, rgb(from var(--c-bloom-2) r g b / 0.25) 0%, transparent 45%);
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.16) 0%, transparent 35%),
+    radial-gradient(circle at 75% 35%, rgba(255, 255, 255, 0.12) 0%, transparent 40%),
+    radial-gradient(circle at 60% 55%, rgba(255, 255, 255, 0.08) 0%, transparent 45%);
   filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   opacity: .9;
   will-change: transform;
@@ -111,11 +105,9 @@ body {
   100% { transform: translate3d(2%, -1%, 0) scale(1); }
 }
 
-/* Dither — high-frequency SVG turbulence overlaid via mix-blend-mode: overlay.
-   Sits ABOVE aurora, BELOW particles. Breaks the smooth radial gradients of
-   the aurora into pixelated grain that reads as cinematic / film-stock,
-   not "smooth digital blur." Distinct from .stage__grain (z 5) which is
-   classic film-grain layered on top of EVERYTHING in the stage. */
+/* Dither — high-frequency SVG turbulence. mix-blend-mode: screen so the
+   noise reads as additive light grain against pure-black, not just
+   modulating the bloom. This is what gives the page its sensor-noise feel. */
 .stage__dither {
   position: absolute;
   inset: 0;
@@ -123,8 +115,8 @@ body {
   pointer-events: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='d'><feTurbulence type='fractalNoise' baseFrequency='2.2' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .85 0'/></filter><rect width='100%25' height='100%25' filter='url(%23d)'/></svg>");
   background-size: 180px 180px;
-  opacity: .32;
-  mix-blend-mode: overlay;
+  opacity: .22;
+  mix-blend-mode: screen;
   will-change: transform;
   transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
@@ -144,7 +136,7 @@ body {
   z-index: 5;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
   background-size: 240px 240px;
-  opacity: .14;
+  opacity: .12;
   mix-blend-mode: overlay;
   will-change: transform;
   transform: translate3d(0, 0, 0);
@@ -168,14 +160,60 @@ body {
 }
 
 /* ============================================================
-   LIQUID MANTA — refractive glass silhouette
-   Two-layer transform stack:
-     .stage__manta-follow  outer wrapper. Position-fixed full viewport,
-                           grid-centered, JS-driven mouse-follow translate
-                           via --manta-follow-x/--manta-follow-y CSS vars.
-     .stage__manta         inner. GSAP animates this for parallax + breath.
-   The two transforms compose multiplicatively, so the follow and the GSAP
-   choreography coexist without fighting each other on the same property.
+   HUD — corner tracker readouts (mint, monospace)
+   ============================================================ */
+.hud {
+  position: fixed;
+  top: 80px;
+  right: var(--pad-x);
+  z-index: 49;            /* below nav (50), above everything else */
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+  text-align: right;
+}
+.hud__row {
+  display: inline-flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+.hud__label { color: var(--c-ink-mute); }
+.hud__val   { color: var(--c-accent); min-width: 5ch; }
+
+/* ============================================================
+   MOUSE-GLOW — mint reticle (the +1 in Monochrome + 1)
+   Body-level fixed div, lerped via CSS vars from the same RAF loop
+   that drives the manta-follow. mix-blend-mode: screen brightens what's
+   beneath without covering it.
+   ============================================================ */
+.mouse-glow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 700px;
+  height: 700px;
+  pointer-events: none;
+  z-index: 6;             /* above hero content (5) and manta (2), below nav (50) and HUD (49) */
+  background: radial-gradient(
+    circle,
+    rgb(from var(--c-accent) r g b / 0.16) 0%,
+    rgb(from var(--c-accent) r g b / 0.05) 30%,
+    transparent 65%
+  );
+  mix-blend-mode: screen;
+  will-change: transform;
+  transform:
+    translate(var(--mouse-x, 50vw), var(--mouse-y, 50vh))
+    translate(-50%, -50%);
+}
+
+/* ============================================================
+   LIQUID MANTA — stealth-wedge silhouette
    ============================================================ */
 .stage__manta-follow {
   position: fixed;
@@ -199,7 +237,7 @@ body {
 }
 .stage__manta-svg,
 .stage__manta-glass {
-  grid-area: 1 / 1;             /* both stack at the same grid cell */
+  grid-area: 1 / 1;
   width: min(120vw, 1500px);
   aspect-ratio: 1200 / 800;
   max-height: 95vh;
@@ -213,23 +251,26 @@ body {
   stroke: var(--glass-border);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
+  stroke-linejoin: miter;       /* sharp corners on the stealth wedge */
 }
 .stage__manta-glass {
   clip-path: url(#manta-clip);
   -webkit-clip-path: url(#manta-clip);
   backdrop-filter: blur(20px) saturate(var(--glass-saturate));
   -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturate));
+  /* Flat near-glass-tint, very subtle vertical falloff for depth.
+     No more chromatic dispersion — stealth body is uniform. */
   background:
     linear-gradient(
       to bottom,
-      rgb(from var(--c-bloom-1) r g b / 0.10) 0%,
-      var(--glass-tint) 45%,
-      var(--glass-tint) 55%,
-      rgb(from var(--c-bloom-2) r g b / 0.12) 100%
+      rgba(255, 255, 255, 0.03) 0%,
+      rgba(255, 255, 255, 0.07) 50%,
+      rgba(255, 255, 255, 0.04) 100%
     );
+  /* White LED halo (was mint). Soft gravity drop-shadow underneath. */
   filter:
-    drop-shadow(0 30px 80px rgba(0, 0, 0, 0.35))
-    drop-shadow(var(--glow-radius-lg) rgb(from var(--glow-color) r g b / calc(var(--glow-strength) * 0.4)));
+    drop-shadow(0 30px 80px rgba(0, 0, 0, 0.45))
+    drop-shadow(var(--glow-radius-lg) rgb(from var(--glow-color) r g b / calc(var(--glow-strength) * 0.45)));
 }
 
 /* ============================================================
@@ -297,10 +338,7 @@ body {
 .nav__menu span:nth-child(2) { width: 70%; align-self: flex-end; }
 
 /* ============================================================
-   HERO — the layered composition.
-   No z-index on .hero: its absolute children's z-indexes (1, 3, 5)
-   participate in the document stacking context, so the manta-follow
-   layer (z 2) can paint between headline--back and headline--front.
+   HERO
    ============================================================ */
 .hero {
   position: relative;
@@ -324,19 +362,14 @@ body {
   color: var(--c-ink);
   pointer-events: none;
 }
-.hero__headline--back  { z-index: 1; }   /* BEHIND the manta — lensed */
-.hero__headline--front { z-index: 3; }   /* IN FRONT of the manta — crisp */
+.hero__headline--back  { z-index: 1; }
+.hero__headline--front { z-index: 3; }
 
 .hero__headline .line { display: block; }
-/* Each .line is block-level; padding-top stacks against the PREVIOUS line's
-   end, not a fixed origin. The four-line stack is We(1) Move(2) The(3) Deep(4).
-   h1-back contains make+good (lines 2,3); h1-front contains we+shit (lines 1,4).
-   make pushes "Move" down 1 line; good has 0 padding because it naturally
-   follows make at line 3. shit needs 1.84em to skip from line 1 to line 4. */
 .line--we   { padding-top: 0;       }   /* line 1 */
 .line--make { padding-top: 0.92em;  }   /* line 2 */
-.line--good { padding-top: 0;       }   /* line 3 — sits right after make */
-.line--shit { padding-top: 1.84em;  }   /* line 4 — skips lines 2,3 from we */
+.line--good { padding-top: 0;       }   /* line 3 */
+.line--shit { padding-top: 1.84em;  }   /* line 4 */
 
 .hero__headline .word {
   display: inline-block;
@@ -344,7 +377,7 @@ body {
   transform: translate(0, 110%);
 }
 .hero__headline .period {
-  color: var(--c-accent);
+  color: var(--c-ink-soft);     /* was --c-accent — monochrome */
   display: inline-block;
   margin-left: -.05em;
 }
@@ -362,26 +395,28 @@ body {
   color: var(--c-ink);
   letter-spacing: .02em;
 }
+/* Reel arrow LED pill — white pill, white glow, glass edge.
+   Was a mint pill in the previous palette. Stealth-monochrome now. */
 .hero__reel-arrow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 26px; height: 26px;
   border-radius: 50%;
-  background: var(--c-accent);
+  background: var(--c-ink);
   color: var(--c-bg-1);
   font-weight: 700;
   font-size: 18px;
   line-height: 1;
   padding-bottom: 2px;
   box-shadow:
-    var(--glow-radius-md) rgb(from var(--glow-color) r g b / var(--glow-strength)),
+    var(--glow-radius-md) rgb(from var(--glow-color) r g b / 0.40),
     inset 0 0 0 1px var(--glass-border);
   transition: box-shadow .4s var(--ease);
 }
 .hero__reel:hover .hero__reel-arrow {
   box-shadow:
-    var(--glow-radius-lg) rgb(from var(--glow-color) r g b / var(--glow-strength)),
+    var(--glow-radius-lg) rgb(from var(--glow-color) r g b / 0.50),
     inset 0 0 0 1px var(--glass-border);
 }
 .hero__reel-text {
@@ -445,9 +480,9 @@ body {
   margin: 0 auto;
 }
 .section__index {
-  font-family: var(--f-ui);
-  font-size: 12px;
-  letter-spacing: .18em;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  letter-spacing: .22em;
   text-transform: uppercase;
   color: var(--c-ink-mute);
   margin-bottom: 48px;
@@ -465,7 +500,7 @@ body {
 .section__title em {
   font-style: italic;
   font-weight: 400;
-  color: var(--c-accent);
+  color: var(--c-ink-soft);     /* was --c-accent — monochrome */
   padding-left: 8vw;
 }
 .section__title--giant { font-size: clamp(72px, 13vw, 220px); }
@@ -512,12 +547,15 @@ body {
 }
 .services__item:last-child { border-bottom: 1px solid rgba(255,255,255,.1); }
 .services__item:hover {
-  background: linear-gradient(90deg, rgba(255,94,58,.05), transparent 60%);
+  /* Was leftover coral rgba(255,94,58,.05) from the original cinematic-ocean palette
+     — cleaned up to monochrome white for the stealth refit. */
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), transparent 60%);
 }
 .services__num {
-  font-family: var(--f-display);
-  font-style: italic;
-  font-size: 22px;
+  font-family: var(--f-mono);
+  font-size: 13px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
   color: var(--c-ink-mute);
 }
 .services__content {
@@ -573,16 +611,18 @@ body {
   transition: color .4s var(--ease), border-color .4s var(--ease);
 }
 .footer__cta a:hover {
-  color: var(--c-accent);
-  border-color: var(--c-accent);
+  color: var(--c-ink);            /* monochrome — was --c-accent */
+  border-color: var(--c-ink);
 }
+/* Footer meta is HUD-numerals: coords + copyright date → mint, monospace */
 .footer__meta {
   display: flex;
   justify-content: space-between;
+  font-family: var(--f-mono);
   font-size: 11px;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--c-ink-mute);
+  color: var(--c-accent);
 }
 
 /* ============================================================
@@ -600,6 +640,8 @@ body {
   .nav { grid-template-columns: 1fr auto; }
   .nav__center { display: none; }
 
+  .hud { top: 70px; font-size: 9px; }
+
   .hero { padding-top: 110px; }
   .hero__headline {
     top: 110px;
@@ -612,24 +654,29 @@ body {
     gap: 16px;
   }
   .section__title em { padding-left: 12vw; }
-  .footer__meta { flex-direction: column; gap: 8px; align-items: center; text-align: center; }
+  .footer__meta {
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    text-align: center;
+  }
 
-  /* Mobile perf: aurora static (no drift), reduced blur. Manta backdrop-filter
-     reduced. Dither slightly toned down so it doesn't dominate the smaller bloom. */
+  /* Mobile perf */
   .stage__aurora {
     animation: none;
     filter: blur(20px) saturate(var(--glass-saturate));
     opacity: .75;
   }
-  .stage__dither { opacity: .22; }
+  .stage__dither { opacity: .16; }
   .stage__grain {
-    opacity: .10;
+    opacity: .08;
     animation-duration: 3.2s;
   }
   .stage__manta-glass {
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
   }
+  .mouse-glow { display: none; }    /* no cursor on touch devices */
 }
 
 @media (prefers-reduced-motion: reduce) {
