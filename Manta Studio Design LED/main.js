@@ -1,8 +1,5 @@
 /* ============================================================
-   MAIN — GSAP load-time clip-path reveals
-
-   No ScrollTrigger — the app fits within (or near) one viewport,
-   so all reveals fire on load with a stagger.
+   MAIN — GSAP load-time clip-path reveals (no scroll triggers)
    ============================================================ */
 
 (function () {
@@ -22,9 +19,6 @@
     return;
   }
 
-  /* Headline lines first (4 of them, tighter stagger), then everything
-     else with a slightly looser cascade. The selectors are queried twice
-     so the headline always leads. */
   const headlineLines = document.querySelectorAll(".headline .line[data-reveal]");
   const otherReveals  = document.querySelectorAll("[data-reveal]:not(.line)");
 
@@ -36,7 +30,7 @@
       clipPath: REVEALED,
       duration: SNAP_DURATION,
       ease: SNAP_EASE,
-      stagger: 0.06,
+      stagger: 0.10,
     });
   }
   if (otherReveals.length) {
@@ -46,6 +40,6 @@
       duration: SNAP_DURATION,
       ease: SNAP_EASE,
       stagger: 0.08,
-    }, "-=0.45");      /* overlap with the headline tail */
+    }, "-=0.45");
   }
 })();

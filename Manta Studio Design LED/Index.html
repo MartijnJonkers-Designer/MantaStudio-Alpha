@@ -17,15 +17,8 @@
 </head>
 <body>
 
-  <!-- ============================================================
-       CURSOR — mint crosshair (native cursor: none on body)
-       ============================================================ -->
   <div class="cursor" id="cursor" aria-hidden="true"></div>
 
-  <!-- ============================================================
-       APP — 4-col x 6-row strict grid
-       Cells separated by 1px white via grid gap + container bg.
-       ============================================================ -->
   <main class="app">
 
     <!-- ROW 1: NAV ============================================== -->
@@ -46,17 +39,15 @@
       <span class="cell__name">CONTACT</span>
     </a>
 
-    <!-- ROWS 2-5 COLS 1-3: HEADLINE =========================== -->
+    <!-- ROWS 2-3 COLS 1-4: HEADLINE (full-width, 2 lines) ====== -->
     <div class="cell cell--headline">
       <h1 class="headline">
-        <span class="line" data-reveal>We</span>
-        <span class="line" data-reveal>Move</span>
-        <span class="line" data-reveal>The</span>
-        <span class="line" data-reveal>Deep</span>
+        <span class="line" data-reveal>We Move</span>
+        <span class="line" data-reveal>The Deep</span>
       </h1>
     </div>
 
-    <!-- ROWS 2-5 COL 4: SIDEBAR ================================ -->
+    <!-- ROW 4 COLS 1-4: SIDEBAR (4 cells horizontal) =========== -->
     <div class="cell cell--data">
       <span class="cell__label">DATA / 0001</span>
       <div class="cell__manta" data-reveal aria-hidden="true">
@@ -69,14 +60,13 @@
       <ul class="cell__specs">
         <li><span>TYP</span><span>STEALTH-WEDGE</span></li>
         <li><span>WSPN</span><span>1080U</span></li>
-        <li><span>LEN</span><span>420U</span></li>
       </ul>
     </div>
 
     <div class="cell cell--about">
       <span class="cell__label">01 / ABOUT</span>
       <p class="cell__body" data-reveal>
-        A studio built like a reef. Multidisciplinary creative work at the
+        A studio built like a reef — multidisciplinary work at the
         intersection of art, design, and technology.
       </p>
       <span class="cell__sub">EST. MMXXVI / AMS-NL</span>
@@ -98,7 +88,7 @@
       <span class="cell__sub">SHOWREEL / 03:42</span>
     </a>
 
-    <!-- ROW 6: FOOTER ========================================== -->
+    <!-- ROW 5: FOOTER ========================================== -->
     <div class="cell cell--foot">
       <span class="cell__label">© MMXXVI</span>
       <span class="cell__name">MANTA WORKS</span>
@@ -114,7 +104,7 @@
     </div>
     <div class="cell cell--foot">
       <span class="cell__label">REV</span>
-      <span class="cell__name">0005 / FRIEDMAN</span>
+      <span class="cell__name">0006 / FRIEDMAN</span>
     </div>
 
   </main>
