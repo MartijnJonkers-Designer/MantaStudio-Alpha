@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#070d12" />
+  <title>Manta Works — We Move The Deep</title>
+  <meta name="description" content="Manta Works is a creative studio operating at the intersection of design, technology, and the deep." />
+
+  <!-- Playfair Display (display serif) + Inter (UI), per brief -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <!-- ============================================================
+       FIXED STAGE — manta + atmosphere + particles + grain
+       Sits behind everything (z-index 0). Content scrolls over it.
+       ============================================================ -->
+  <div class="stage" aria-hidden="true">
+    <div class="stage__gradient"></div>
+
+    <!-- Aurora-style colour wash (the purple/teal bloom from the reference) -->
+    <div class="stage__aurora"></div>
+
+    <!-- The manta sits in the middle of the stage. -->
+    <!-- It will be sandwiched between two halves of the headline using z-index. -->
+    <div class="stage__manta" id="manta">
+      <!-- Drop your high-res manta into assets/manta.png and uncomment: -->
+      <!-- <img src="assets/manta.png" alt="" /> -->
+
+      <!-- Placeholder so the layout reads before the asset is dropped in. -->
+      <svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet" class="stage__manta-placeholder">
+        <defs>
+          <radialGradient id="mantaBody" cx="50%" cy="50%" r="55%">
+            <stop offset="0%"  stop-color="#3a4f6b" stop-opacity="0.95"/>
+            <stop offset="60%" stop-color="#1a2638" stop-opacity="0.85"/>
+            <stop offset="100%" stop-color="#070d12" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="mantaGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#6c7fa8" stop-opacity="0.5"/>
+            <stop offset="100%" stop-color="#6c7fa8" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="wingHi" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%"  stop-color="#5d75a3" stop-opacity="0.4"/>
+            <stop offset="50%" stop-color="#8aa6d6" stop-opacity="0.65"/>
+            <stop offset="100%" stop-color="#5d75a3" stop-opacity="0.4"/>
+          </linearGradient>
+        </defs>
+
+        <!-- soft glow halo -->
+        <ellipse cx="600" cy="400" rx="560" ry="220" fill="url(#mantaGlow)"/>
+
+        <!-- main wing silhouette — sweeping curve -->
+        <path d="
+          M 60,420
+          C 220,260  420,240  600,330
+          C 780,240  980,260  1140,420
+          C 980,470  780,440  600,400
+          C 420,440  220,470  60,420 Z"
+          fill="url(#mantaBody)"/>
+
+        <!-- highlight rim along the leading wing edge -->
+        <path d="
+          M 100,415
+          C 240,290  430,280  600,355
+          C 770,280  960,290  1100,415"
+          stroke="url(#wingHi)" stroke-width="2" fill="none" opacity="0.7"/>
+
+        <!-- body -->
+        <ellipse cx="600" cy="380" rx="60" ry="35" fill="#1a2638" opacity="0.9"/>
+
+        <!-- trailing tail -->
+        <path d="M 600,410 L 612,640 L 600,665 L 588,640 Z" fill="#1a2638" opacity="0.85"/>
+      </svg>
+    </div>
+
+    <!-- Marine snow particles -->
+    <canvas class="stage__particles" id="particles"></canvas>
+
+    <!-- Film grain -->
+    <div class="stage__grain"></div>
+
+    <!-- Edge vignette -->
+    <div class="stage__vignette"></div>
+  </div>
+
+  <!-- ============================================================
+       NAV
+       ============================================================ -->
+  <header class="nav">
+    <a href="#" class="nav__mark">
+      <span class="nav__mark-bold">MANTA</span>
+      <span class="nav__mark-thin">/ WORKS<sup>®</sup></span>
+    </a>
+    <a href="#work" class="nav__center">
+      <span class="nav__chev">‹</span>
+      <span>All our work</span>
+    </a>
+    <button class="nav__menu" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+  </header>
+
+  <!-- ============================================================
+       HERO — stacked left-aligned headline weaving through the manta
+       Layering trick:
+         .hero__headline--back  → z-index: 1   (BEHIND manta)
+         .stage__manta          → z-index: 2   (the manta)
+         .hero__headline--front → z-index: 3   (IN FRONT of manta)
+       ============================================================ -->
+  <section class="hero">
+
+    <!-- Headline lines that should sit BEHIND the manta wings -->
+    <h1 class="hero__headline hero__headline--back" aria-hidden="true">
+      <span class="line line--make"><span class="word" data-reveal>Move</span></span>
+      <span class="line line--good"><span class="word" data-reveal>The</span></span>
+    </h1>
+
+    <!-- Headline lines that sit IN FRONT of the manta wings -->
+    <h1 class="hero__headline hero__headline--front">
+      <span class="line line--we"><span class="word" data-reveal>We</span></span>
+      <span class="line line--shit"><span class="word" data-reveal>Deep<span class="period">.</span></span></span>
+
+      <!-- Visually-hidden full headline for screen readers -->
+      <span class="visually-hidden">We Move The Deep.</span>
+    </h1>
+
+    <!-- Showreel cue -->
+    <a href="#vision" class="hero__reel" data-reveal>
+      <span class="hero__reel-arrow">›</span>
+      <span class="hero__reel-text">Our Showreel</span>
+    </a>
+  </section>
+
+  <!-- ============================================================
+       INTRO COPY (lives just below hero, like the reference)
+       ============================================================ -->
+  <section class="intro">
+    <p class="intro__lede" data-reveal>
+      Manta Works is a multidisciplinary creative studio at the intersection
+      of art, design and technology.
+    </p>
+    <p class="intro__sub" data-reveal>
+      Our goal is to make work that moves slowly and lasts —
+      brand systems, digital products, and editorial worlds for clients
+      building for the long tide.
+    </p>
+    <div class="intro__social" data-reveal>
+      <a href="#">Instagram</a><span>/</span>
+      <a href="#">Are.na</a><span>/</span>
+      <a href="#">Read.cv</a><span>/</span>
+      <a href="#">Email</a>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       ABOUT
+       ============================================================ -->
+  <section class="section section--about" id="about">
+    <div class="section__index" data-reveal>01 — About</div>
+    <h2 class="section__title">
+      <span data-reveal>A studio built</span>
+      <em data-reveal>like a reef.</em>
+    </h2>
+    <div class="section__body">
+      <p data-reveal>
+        We work in long, slow strokes. Coral builds a coastline grain by grain,
+        and the best work — the kind that outlasts a season — is built the same way.
+      </p>
+      <p data-reveal>
+        Every word, mark, and motion is considered. Nothing exists by accident.
+        We choose <em>presence over polish</em> and depth over surface noise.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       SERVICES
+       ============================================================ -->
+  <section class="section section--services" id="services">
+    <div class="section__index" data-reveal>02 — Services</div>
+    <h2 class="section__title">
+      <span data-reveal>What we</span>
+      <em data-reveal>tend to.</em>
+    </h2>
+
+    <ul class="services">
+      <li class="services__item" data-reveal>
+        <span class="services__num">i</span>
+        <div class="services__content">
+          <h3>Brand Identity</h3>
+          <p>Marks, type systems, voice, and the architecture that holds them together.</p>
+        </div>
+      </li>
+      <li class="services__item" data-reveal>
+        <span class="services__num">ii</span>
+        <div class="services__content">
+          <h3>Digital Product</h3>
+          <p>Interfaces and experiences engineered for clarity and quiet confidence.</p>
+        </div>
+      </li>
+      <li class="services__item" data-reveal>
+        <span class="services__num">iii</span>
+        <div class="services__content">
+          <h3>Editorial &amp; Print</h3>
+          <p>Books, reports, and printed matter for institutions that still believe in paper.</p>
+        </div>
+      </li>
+      <li class="services__item" data-reveal>
+        <span class="services__num">iv</span>
+        <div class="services__content">
+          <h3>Creative Direction</h3>
+          <p>Long-form partnerships for founders building the next decade, not the next quarter.</p>
+        </div>
+      </li>
+    </ul>
+  </section>
+
+  <!-- ============================================================
+       VISION
+       ============================================================ -->
+  <section class="section section--vision" id="vision">
+    <div class="section__index" data-reveal>03 — Vision</div>
+    <h2 class="section__title section__title--giant">
+      <span data-reveal>We make</span>
+      <span data-reveal>things</span>
+      <em data-reveal>that last.</em>
+    </h2>
+    <div class="section__body section__body--centered">
+      <p data-reveal>
+        In a culture optimised for the immediate, we choose the durable.
+        We make things meant to be discovered, returned to, and quietly admired —
+        long after the launch noise has faded.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       FOOTER
+       ============================================================ -->
+  <footer class="footer" id="contact">
+    <div class="footer__cta">
+      <p data-reveal>Have a tide worth turning?</p>
+      <a href="mailto:hello@mantaworks.studio" data-reveal>hello@mantaworks.studio</a>
+    </div>
+    <div class="footer__meta">
+      <span>© Manta Works, MMXXVI</span>
+      <span>52.234° N / 5.176° E</span>
+    </div>
+  </footer>
+
+  <!-- GSAP + ScrollTrigger -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
