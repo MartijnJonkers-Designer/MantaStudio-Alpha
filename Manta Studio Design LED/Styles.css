@@ -303,13 +303,15 @@ body {
 .hero__headline--front { z-index: 3; }   /* IN FRONT of the manta — crisp */
 
 .hero__headline .line { display: block; }
-/* Vertical positions for each of the four lines.
-   CRITICAL: padding-top increments MUST equal the line-height (0.92em)
-   so back-layer and front-layer lines stack into one continuous block. */
-.line--we   { padding-top: 0;       }
-.line--make { padding-top: 0.92em;  }
-.line--good { padding-top: 1.84em;  }
-.line--shit { padding-top: 2.76em;  }
+/* Each .line is block-level; padding-top stacks against the PREVIOUS line's
+   end, not a fixed origin. The four-line stack is We(1) Move(2) The(3) Deep(4).
+   h1-back contains make+good (lines 2,3); h1-front contains we+shit (lines 1,4).
+   make pushes "Move" down 1 line; good has 0 padding because it naturally
+   follows make at line 3. shit needs 1.84em to skip from line 1 to line 4. */
+.line--we   { padding-top: 0;       }   /* line 1 */
+.line--make { padding-top: 0.92em;  }   /* line 2 */
+.line--good { padding-top: 0;       }   /* line 3 — sits right after make */
+.line--shit { padding-top: 1.84em;  }   /* line 4 — skips lines 2,3 from we */
 
 .hero__headline .word {
   display: inline-block;
