@@ -37,7 +37,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     0.1,
     50
   );
-  camera.position.set(0, 0.6, 2.5);
+  camera.position.set(0, 0, 4);            // per v0.23 — head-on view
   camera.lookAt(0, 0, 0);
 
   /* -------- Renderer (per brief: antialias true, pixelRatio capped at 2) -------- */
@@ -59,42 +59,39 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  /* -------- Geometry: wider stealth-bomber chevron --------
-     Proportions widened to 1.2 x 0.6 (was 0.8 x 0.7) for a more
-     aggressive horizontal presence. Bevel sharpened to keep wing
-     tips pointed: bevelSize 0.12 / bevelThickness 0.15 (was 0.50/0.50).
-     Final bbox ~1.44 x 0.84 x 0.40 — fits camera at z=2.5 / FOV 45. */
+  /* -------- Geometry: precision manta silhouette via quadraticCurveTo --------
+     Per v0.23 brief — coordinate map drawn with smooth Bezier curves
+     for swept aerodynamic wings. Pre-bevel bbox: 2.4 x 1.0 (X: -1.2..+1.2,
+     Y: -0.6..+0.4). Bevel adds 0.10 outward + 0.15 each side in Z.
+     Final bbox ~2.6 x 1.2 x 0.35 — head-on visible at camera z=4 / FOV 45. */
   const mantaShape = new THREE.Shape();
-  mantaShape.moveTo( 0.00,  0.30);    // nose tip (top center)
-  mantaShape.lineTo(-0.18,  0.18);    // upper-left shoulder
-  mantaShape.lineTo(-0.60,  0.04);    // far left wing tip
-  mantaShape.lineTo(-0.15, -0.05);    // left trailing inflection
-  mantaShape.lineTo(-0.06, -0.27);    // left tail base
-  mantaShape.lineTo( 0.00, -0.30);    // tail tip
-  mantaShape.lineTo( 0.06, -0.27);    // right tail base
-  mantaShape.lineTo( 0.15, -0.05);    // right trailing inflection
-  mantaShape.lineTo( 0.60,  0.04);    // far right wing tip
-  mantaShape.lineTo( 0.18,  0.18);    // upper-right shoulder
-  mantaShape.closePath();
+  mantaShape.moveTo(0.0, 0.4);                              // Nose / head
+  mantaShape.quadraticCurveTo( 0.1,  0.4,   1.2,  0.0);     // -> right wing tip
+  mantaShape.quadraticCurveTo( 0.1, -0.2,   0.0, -0.6);     // -> tail point
+  mantaShape.quadraticCurveTo(-0.1, -0.2,  -1.2,  0.0);     // -> left wing tip
+  mantaShape.quadraticCurveTo(-0.1,  0.4,   0.0,  0.4);     // -> back to nose
 
   const extrudeSettings = {
-    depth:           0.10,
+    depth:           0.05,    // per v0.23 brief — flat aerodynamic monolith
     bevelEnabled:    true,
-    bevelSegments:   6,       // smaller bevel needs fewer segments
-    bevelSize:       0.12,    // per v0.22 brief — sharp aerodynamic edges
-    bevelThickness:  0.15,    // per v0.22 brief
-    curveSegments:   12,
+    bevelSegments:   8,       // per v0.23 brief
+    bevelSize:       0.10,    // per v0.23 brief
+    bevelThickness:  0.15,    // per v0.23 brief
+    curveSegments:   24,      // smooth quadratic curves
   };
   const geometry = new THREE.ExtrudeGeometry(mantaShape, extrudeSettings);
   geometry.center();
-  geometry.rotateX(-Math.PI / 2);     // lay flat in XZ plane (Y up)
+  /* No rotateX — geometry stays in XY plane so its broad face points
+     at the camera (which is now head-on at z=4). */
 
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color:               0xE8F4FF,    // pale icy blue
-    transmission:        1.0,         // per brief
-    thickness:           2.5,         // per v0.22 brief — high-clarity crystal
-    roughness:           0.05,        // per brief — near-smooth
-    ior:                 1.5,         // per brief
+    color:               0xFFFFFF,    // per v0.23 brief — pure white, ice from env
+    metalness:           0.0,         // per v0.23 brief
+    transmission:        1.0,
+    thickness:           2.5,
+    roughness:           0.02,        // per v0.23 brief — near-mirror smooth
+    ior:                 1.5,
+    envMapIntensity:     2.5,         // per v0.23 brief — boost env reflections
     attenuationDistance: 1.5,
     attenuationColor:    new THREE.Color(0xC0DDE8),
     clearcoat:           0.7,
@@ -105,7 +102,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   });
 
   const manta = new THREE.Mesh(geometry, mantaMaterial);
-  manta.rotation.x = -0.25;           // slight forward tilt to show depth
+  /* No initial pitch tilt — head-on camera view is the point. */
   scene.add(manta);
 
   /* -------- Inner glow PointLight --------
@@ -140,8 +137,10 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   function tick(tMs) {
     const tSec = tMs * 0.001;
 
-    // Idle rocking — slow yaw + sine bob (heavy underwater feel per v0.22)
-    manta.rotation.y = Math.sin(tSec * 0.15) * 0.18;
+    // Idle rocking — slow yaw around vertical (silhouette stays visible
+    // since manta now lies in XY plane facing camera) + small bob.
+    manta.rotation.y = Math.sin(tSec * 0.15) * 0.20;
+    manta.rotation.x = Math.sin(tSec * 0.20) * 0.06;
     manta.position.y = Math.sin(tSec * 0.20) * 0.04;
 
     // Cyan pulse: phase 0..1 over PULSE_PERIOD, with a sharp peak
@@ -189,5 +188,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.22 — Sharp Precision · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.23 — Precision Manta Silhouette · Three.js", THREE.REVISION);
 })();
