@@ -266,6 +266,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   let mixer = null;          // animation mixer, if model has clips
   const clock = new THREE.Clock();
 
+  // v1.15 — cursor tracking. mouse is in normalized device space [-1, +1].
+  // smoothMouse is the eased version we feed to manta rotation + floor shader.
+  const mouse       = new THREE.Vector2(0, 0);
+  const smoothMouse = new THREE.Vector2(0, 0);
+  const BASE_ROT_Y  = 3 * Math.PI / 10;     // from v1.10 — the diagonal pose
+  const BASE_ROT_X  = -0.05;
+
+  window.addEventListener("pointermove", (e) => {
+    mouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+    mouse.y = -((e.clientY / window.innerHeight) * 2 - 1);
+  }, { passive: true });
+
   const loader = new GLTFLoader();
   loader.load(
     "cartoon_manta_ray_animated.glb",
@@ -297,8 +309,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       // v1.10 — head moved from 1-2 o'clock (v1.9 was 180° wrong) to ~7-8.
       // Sign flipped: -7*PI/10 -> +3*PI/10 (equivalent rotation, opposite hemisphere).
       // If still off, dial is rotation.y — each clock hour ≈ +/- PI/6 (30°).
-      manta.rotation.y = 3 * Math.PI / 10;    // ~+54°, head at ~7-8 o'clock
-      manta.rotation.x = -0.05;               // slight nose-down tip
+      // Initial pose — tick loop will add cursor-driven offsets each frame.
+      manta.rotation.y = BASE_ROT_Y;          // ~+54°, head at ~7-8 o'clock
+      manta.rotation.x = BASE_ROT_X;          // slight nose-down tip
 
       // 3. Animation mixer (if any clips).
       if (gltf.animations && gltf.animations.length > 0) {
@@ -333,7 +346,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   const floorGeo = new THREE.PlaneGeometry(20, 20, 1, 1);
   const floorMat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: { value: 0 }
+      uTime:  { value: 0 },
+      uMouse: { value: new THREE.Vector2(0, 0) }   // v1.15 — cursor-driven ripple center
     },
     vertexShader: `
       varying vec2 vUv;
@@ -345,32 +359,44 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     fragmentShader: `
       varying vec2 vUv;
       uniform float uTime;
+      uniform vec2  uMouse;
 
       void main() {
-        vec2 offset = vUv - vec2(0.5);
+        // Ripple origin shifts toward cursor.
+        // uMouse is in screen-space [-1, +1], we map it to a small UV offset
+        // so the ripple center moves with the cursor without leaving the plane.
+        vec2 center = vec2(0.5) + uMouse * 0.18;
+        vec2 offset = vUv - center;
         float dist = length(offset);
 
-        // Soft radial fade so the floor blends into BG
-        float fade = smoothstep(0.45, 0.10, dist);
+        // v1.15 BUG FIX: smoothstep(edge0, edge1, x) is undefined when
+        // edge0 >= edge1. v1.14 used smoothstep(0.45, 0.10, dist) which
+        // killed the ripples almost everywhere on screen. Correct form:
+        //   1.0 - smoothstep(0.10, 0.45, dist)
+        // -> fade = 1 near center, 0 far from center.
+        float fade = 1.0 - smoothstep(0.10, 0.45, dist);
 
-        // Three layered ripples at different frequencies / phases.
-        // The negative uTime coefficient makes them expand outward.
-        float w1 = sin(dist * 65.0 - uTime * 1.2);
-        float w2 = sin(dist * 42.0 - uTime * 0.7);
-        float w3 = sin(dist * 95.0 - uTime * 1.6);
+        // Wider rings — frequencies cut roughly in half so the bands are
+        // ~2x wider and read more like the reference's broad gradient bands.
+        float w1 = sin(dist * 35.0 - uTime * 1.2);
+        float w2 = sin(dist * 22.0 - uTime * 0.7);
+        float w3 = sin(dist * 52.0 - uTime * 1.6);
         float ripple = (w1 * 0.5 + w2 * 0.3 + w3 * 0.2);
 
-        // Color cycles between cyan and lavender along the radius and over time
+        // v1.15 — palette pulled directly from the reference image:
+        //   cyan band:     pale turquoise, slightly green-shifted, bright
+        //   lavender band: pale pink-violet, warm undertone, bright
+        // Both are pastels with high luminance, NOT deep saturated.
         float hueT = sin(dist * 4.5 - uTime * 0.4) * 0.5 + 0.5;
-        vec3 cyan     = vec3(0.30, 0.85, 1.00);
-        vec3 lavender = vec3(0.82, 0.68, 1.00);
+        vec3 cyan     = vec3(0.55, 0.94, 0.92);
+        vec3 lavender = vec3(0.92, 0.76, 0.91);
         vec3 bandColor = mix(cyan, lavender, hueT);
 
-        // Off-white base
+        // Off-white base — matches the reference BG/floor seam color.
         vec3 base = vec3(0.96, 0.97, 0.99);
 
-        // Ripple defines opacity, fade attenuates it
-        float alpha = (ripple * 0.5 + 0.5) * fade * 0.45;
+        // Bumped 0.45 -> 0.85 so the bands actually read.
+        float alpha = (ripple * 0.5 + 0.5) * fade * 0.85;
         vec3 finalColor = mix(base, bandColor, alpha);
 
         gl_FragColor = vec4(finalColor, 1.0);
@@ -447,7 +473,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   function tick() {
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
-    floorMat.uniforms.uTime.value = clock.elapsedTime;   // v1.14 — drive shader animation
+
+    // v1.15 — cursor smoothing + propagation to manta and floor.
+    smoothMouse.x += (mouse.x - smoothMouse.x) * 0.06;
+    smoothMouse.y += (mouse.y - smoothMouse.y) * 0.06;
+
+    if (manta) {
+      // Subtle rotation offsets — manta tilts toward cursor.
+      manta.rotation.y = BASE_ROT_Y + smoothMouse.x * 0.18;
+      manta.rotation.x = BASE_ROT_X + smoothMouse.y * 0.12;
+    }
+
+    floorMat.uniforms.uTime.value  = clock.elapsedTime;
+    floorMat.uniforms.uMouse.value.copy(smoothMouse);   // ripple center follows cursor
+
     composer.render();
     requestAnimationFrame(tick);
   }
@@ -496,5 +535,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.14 — Bold pass: animated floor shader + fresnel-darkened cyan + iridescence · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.15 — Floor shader bug fix + reference palette + cursor interactivity · Three.js", THREE.REVISION);
 })();
