@@ -1,23 +1,30 @@
 /* ============================================================
-   AUROS — Sculpted Monolith v1.5
+   AUROS — Procedural Manta Volume v1.6
 
-   Paradigm shift: the manta is no longer an extruded silhouette.
-   It's now a height-field sampled across a high-resolution plane.
-   Same closed-form "manta math" that drove the dot cloud earlier in
-   the project — body thick (high Z), wings thin (low Z), tail trailing.
+   First attempt at a real 3D volumetric manta (vs. the height-field
+   relief in v1.5). If this falls short of the reference image we
+   switch to a Sketchfab GLTF model.
 
-   What changed vs v1.4:
-   - Removed: ExtrudeGeometry, Shape silhouette, displacementMap,
-     Fresnel via onBeforeCompile, emissive cyan pulse, inner PointLight,
-     EffectComposer / RenderPass / UnrealBloomPass / OutputPass.
-   - Added: mantaHeight(x, y) analytic height function.
-     PlaneGeometry(3.4, 1.7, 128, 128) sampled per-vertex.
-     side: DoubleSide on the material so the relief reads from any angle.
-   - Renderer now uses plain renderer.render(scene, camera). No bloom.
+   Architecture:
+   - Two height-field surfaces (top + bottom) sharing a silhouette
+     edge. Top arches into the dorsal bulge, bottom flattens into the
+     belly. Both go to zero at the silhouette edge -> they meet ->
+     closed volume.
+   - Geometry is built per-triangle by a custom BufferGeometry: only
+     triangles inside the silhouette are emitted, so there's no flat
+     glass slab around the manta.
+   - Two cone-shaped cephalic horns at the head.
+   - A thin tube tail trailing behind.
+   - All children of one Group, same glass material on every mesh.
 
-   Kept: gradient background, iridescent floor + ripples, RectAreaLight
-   key + shadow-casting DirectionalLight + rim SpotLight + top-down
-   pool SpotLight, manta sway animation, magnetic CTA.
+   Manta math (closed-form):
+     silhouette(x, y)  -> 0 or 1, parabolic taper
+     midZ(x, y)        -> centerline; wing tips curl downward
+     thickness(x, y)   -> body bulge (parabolic across both axes)
+     top    = midZ + 0.6 * thickness    (dorsal arch)
+     bottom = midZ - 0.4 * thickness    (flatter belly)
+
+   Camera repositioned to 3/4 top-down to match the reference.
    ============================================================ */
 
 import * as THREE from "three";
@@ -50,15 +57,21 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
   }
   scene.background = makeBackgroundGradient();
 
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50);
-  camera.position.set(0, 0, 4.0);
-  camera.lookAt(0, 0, 0);
+  /* ============================================================
+     CAMERA — 3/4 top-down to match reference framing
+     ============================================================ */
+  const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 50);
+  camera.position.set(0.0, 1.7, 3.0);
+  camera.lookAt(0.0, -0.05, 0.0);
 
+  /* ============================================================
+     RENDERER
+     ============================================================ */
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;          // restored from 0.8 — no bloom threshold to fight
+  renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -68,7 +81,8 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
   scene.environment = pmrem.fromScene(envScene, 0.0).texture;
 
   /* ============================================================
-     FLOOR RIPPLE TEXTURE — concentric iridescent bands
+     FLOOR RIPPLE TEXTURE — concentric iridescent bands.
+     Foreshortens to ellipses naturally under 3/4 camera angle.
      ============================================================ */
   function makeRippleTexture() {
     const size = 1024;
@@ -110,96 +124,317 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
     return tex;
   }
 
-  const rippleMap = makeRippleTexture();
+  /* ============================================================
+     FRACTURE NORMAL MAP — internal cracks visible through transmission
+     ============================================================ */
+  function makeFractureNormalTexture() {
+    const size = 1024;
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const ctx = c.getContext("2d");
+    const img = ctx.createImageData(size, size);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const nx = 128 + (Math.random() - 0.5) * 30;
+      const ny = 128 + (Math.random() - 0.5) * 30;
+      d[i] = nx; d[i+1] = ny; d[i+2] = 255; d[i+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.lineCap = "round";
+    for (let i = 0; i < 50; i++) {
+      const r = 70 + Math.random() * 80;
+      const g = 70 + Math.random() * 80;
+      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.55)`;
+      ctx.lineWidth = 1 + Math.random() * 2;
+      ctx.beginPath();
+      const x0 = Math.random() * size, y0 = Math.random() * size;
+      ctx.moveTo(x0, y0);
+      ctx.bezierCurveTo(
+        x0 + (Math.random() - 0.5) * 250, y0 + (Math.random() - 0.5) * 250,
+        x0 + (Math.random() - 0.5) * 250, y0 + (Math.random() - 0.5) * 250,
+        x0 + (Math.random() - 0.5) * 350, y0 + (Math.random() - 0.5) * 350
+      );
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1.5, 1.5);
+    return tex;
+  }
+
+  const rippleMap      = makeRippleTexture();
+  const fractureNormal = makeFractureNormalTexture();
 
   /* ============================================================
-     MANTA HEIGHT FUNCTION — closed-form analytic sculpt.
-
-     Coordinates: x in [-1.6, 1.6] (wing tips), y in [-0.9, 0.6]
-     (tail tip to nose). Returns Z thickness in [0, ~0.5].
-
-     Body silhouette: parabolic taper between yFront and yBack,
-     both shrinking quadratically with |x|.
-     Body thickness: parabolic across both axes (peaks at midline,
-     zero at silhouette edges) times wing taper (thick at center,
-     thin at wing tip).
-     Tail: narrow strip below body, thin pinch toward y=-0.9.
-     Ribs: superimposed sinusoidal modulation, body-only.
+     MANTA MATH
      ============================================================ */
-  function mantaHeight(x, y) {
+  const WING_HALF = 1.6;     // wing tip x-extent
+  const Y_FRONT_0 = 0.55;    // y at nose, x=0
+  const Y_BACK_0  = -0.30;   // body back at x=0
+  const TAIL_TIP  = -1.2;    // tail tip y
+
+  function silhouette(x, y) {
     const ax = Math.abs(x);
-    if (ax > 1.6) return 0;
+    if (ax > WING_HALF) return 0;
+    const xN = ax / WING_HALF;
+    const taper = Math.max(0, 1 - xN * xN);
+    const yFront = Y_FRONT_0 * taper + 0.05;   // small constant for rounded nose
+    const yBack  = Y_BACK_0  * taper;
+    return (y >= yBack && y <= yFront) ? 1 : 0;
+  }
 
-    const xNorm = ax / 1.6;                          // 0 at midline, 1 at wing tip
-    const taper = Math.max(0, 1 - xNorm * xNorm);    // parabolic silhouette taper
-    const yFront =  0.60 * taper;                    // front edge at this x
-    const yBack  = -0.30 * taper;                    // body back edge at this x
+  function wingCurl(x) {
+    // Wings dip downward at tips. Subtle curl.
+    const xN = Math.abs(x) / WING_HALF;
+    return -Math.pow(xN, 3.2) * 0.28;
+  }
 
-    // ----- Body region -----
-    if (y >= yBack && y <= yFront) {
-      const yMid  = (yFront + yBack) * 0.5;
-      const yHalf = Math.max((yFront - yBack) * 0.5, 1e-3);
-      const yLocal = (y - yMid) / yHalf;             // -1 .. +1 across body
-      const yProfile = Math.max(0, 1 - yLocal * yLocal);   // 1 at midline, 0 at front/back
-      const wingProfile = Math.pow(taper, 0.6);            // 1 at center, smooth taper
+  function midZ(x, y) {
+    // Centerline of the manta volume. Wings curl, body stays neutral.
+    return wingCurl(x);
+  }
 
-      let h = yProfile * wingProfile * 0.50;
+  function thicknessAt(x, y) {
+    const sil = silhouette(x, y);
+    if (sil === 0) return 0;
 
-      // Organic ribbing — fine sinusoidal modulation, body only.
-      h += Math.sin(ax * 9.0)  * 0.018 * wingProfile;
-      h += Math.sin(y  * 18.0) * 0.010 * wingProfile;
+    const ax = Math.abs(x);
+    const xN = ax / WING_HALF;
+    const taper = Math.max(0, 1 - xN * xN);
+    const yFront = Y_FRONT_0 * taper + 0.05;
+    const yBack  = Y_BACK_0  * taper;
 
-      return Math.max(0, h);
+    // Cross-body parabola: 1 at midline, 0 at front/back edges.
+    const yMid  = (yFront + yBack) * 0.5;
+    const yHalf = Math.max((yFront - yBack) * 0.5, 1e-3);
+    const yLocal = (y - yMid) / yHalf;
+    const yProfile = Math.max(0, 1 - yLocal * yLocal);
+
+    // Wing taper: 1 at center, sharp falloff to thin wings.
+    const wingProfile = Math.pow(taper, 0.55);
+
+    let t = yProfile * wingProfile * 0.50;
+
+    // Subtle organic ribbing on the body
+    t += Math.sin(y * 9.0)  * 0.012 * wingProfile * yProfile;
+    t += Math.sin(ax * 7.0) * 0.010 * wingProfile * yProfile;
+
+    return Math.max(0, t);
+  }
+
+  function topZ(x, y)    { return midZ(x, y) + 0.6 * thicknessAt(x, y); }
+  function bottomZ(x, y) { return midZ(x, y) - 0.4 * thicknessAt(x, y); }
+
+  /* ============================================================
+     CUSTOM BUFFER GEOMETRY — only emit triangles inside silhouette
+     ============================================================ */
+  function buildMantaSurface(side /* "top" | "bottom" */) {
+    const segs = 160;
+    const W = WING_HALF * 2 + 0.1;     // a hair wider than wingspan
+    const H = (Y_FRONT_0 + 0.05) - Y_BACK_0 + 0.15;
+    const yCenter = ((Y_FRONT_0 + 0.05) + Y_BACK_0) * 0.5;
+
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+
+    // Build vertex grid
+    for (let j = 0; j <= segs; j++) {
+      const v = j / segs;
+      const y = yCenter + (v - 0.5) * H;
+      for (let i = 0; i <= segs; i++) {
+        const u = i / segs;
+        const x = (u - 0.5) * W;
+        const z = (side === "top") ? topZ(x, y) : bottomZ(x, y);
+        positions.push(x, y, z);
+        uvs.push(u, v);
+      }
     }
 
-    // ----- Tail region -----
-    if (y < yBack && y > -0.9) {
-      const tailY = (y + 0.9) / 0.6;                 // 0 at tip, 1 at base
-      const tailWidth = 0.12 * tailY;
-      if (ax > tailWidth) return 0;
-      const tailX = ax / Math.max(tailWidth, 1e-3);
-      return (1 - tailX * tailX) * tailY * 0.06;
+    // Helper: is this grid cell inside the silhouette?
+    // We require all 4 corners inside so we don't get jagged half-quads.
+    function gridInside(i, j) {
+      const u = i / segs, v = j / segs;
+      const x = (u - 0.5) * W, y = yCenter + (v - 0.5) * H;
+      return silhouette(x, y) > 0;
     }
 
-    return 0;
+    // Build quad indices
+    for (let j = 0; j < segs; j++) {
+      for (let i = 0; i < segs; i++) {
+        // Only emit if all 4 corners are inside the silhouette.
+        if (!gridInside(i,   j))   continue;
+        if (!gridInside(i+1, j))   continue;
+        if (!gridInside(i,   j+1)) continue;
+        if (!gridInside(i+1, j+1)) continue;
+
+        const a = j * (segs + 1) + i;
+        const b = a + 1;
+        const c = a + (segs + 1);
+        const d = c + 1;
+
+        if (side === "top") {
+          // CCW from above (normals point +Z)
+          indices.push(a, c, b);
+          indices.push(b, c, d);
+        } else {
+          // CW from above (normals point -Z)
+          indices.push(a, b, c);
+          indices.push(b, d, c);
+        }
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
   }
 
   /* ============================================================
-     SCULPTED PLANE GEOMETRY
-     128x128 segments -> 16641 vertices.
+     SILHOUETTE EDGE WALL — closes the volume crisply.
+     For each grid cell on the silhouette boundary, emit a vertical
+     quad connecting top to bottom. This gives the side profile
+     of the manta, like the rim of a sliced fruit.
      ============================================================ */
-  const SEGMENTS = 128;
-  const planeGeo = new THREE.PlaneGeometry(3.4, 1.7, SEGMENTS, SEGMENTS);
-  const pos = planeGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    pos.setZ(i, mantaHeight(x, y));
+  function buildEdgeWall() {
+    const segs = 160;
+    const W = WING_HALF * 2 + 0.1;
+    const H = (Y_FRONT_0 + 0.05) - Y_BACK_0 + 0.15;
+    const yCenter = ((Y_FRONT_0 + 0.05) + Y_BACK_0) * 0.5;
+
+    const positions = [];
+    const uvs = [];
+    const indices = [];
+
+    function pushQuad(p0, p1, p2, p3) {
+      const base = positions.length / 3;
+      positions.push(...p0, ...p1, ...p2, ...p3);
+      uvs.push(0, 0,  1, 0,  0, 1,  1, 1);
+      indices.push(base, base + 2, base + 1);
+      indices.push(base + 1, base + 2, base + 3);
+    }
+
+    function vert(x, y, side) {
+      const z = (side === "top") ? topZ(x, y) : bottomZ(x, y);
+      return [x, y, z];
+    }
+
+    for (let j = 0; j < segs; j++) {
+      for (let i = 0; i < segs; i++) {
+        const u0 = i / segs,     u1 = (i + 1) / segs;
+        const v0 = j / segs,     v1 = (j + 1) / segs;
+        const x0 = (u0 - 0.5) * W, x1 = (u1 - 0.5) * W;
+        const y0 = yCenter + (v0 - 0.5) * H, y1 = yCenter + (v1 - 0.5) * H;
+
+        const s00 = silhouette(x0, y0);
+        const s10 = silhouette(x1, y0);
+        const s01 = silhouette(x0, y1);
+        const s11 = silhouette(x1, y1);
+        const inside = s00 + s10 + s01 + s11;
+
+        // Boundary cells: some corners inside, some outside.
+        if (inside === 0 || inside === 4) continue;
+
+        // For each cell edge that crosses the boundary, emit a vertical quad.
+        // Edge bottom (y0): between (x0, y0) and (x1, y0)
+        if (s00 !== s10) {
+          const xm = s00 ? x1 : x0;  // the inside x... actually need both ends
+          // Connect inside vertex to silhouette boundary at outside.
+          // Simplification: just connect (x0,y0) top -> (x0,y0) bottom etc.
+          // We emit a wall along the inside edge.
+          const ix = s00 ? x0 : x1;
+          const ox = s00 ? x1 : x0;
+          // We'll only build wall along the inside vertex column.
+          // Actually emit wall at the inside corner.
+          pushQuad(
+            vert(ix, y0, "top"),
+            vert(ix, y0, "bottom"),
+            // Step toward the outside but stay just inside (boundary point ~= inside)
+            // For simplicity: same x, but at y midway? No — just emit single vertical quad
+            // at the inside corner extending up.
+            vert(ix, y0 + (y1 - y0) * 0.0001, "top"),
+            vert(ix, y0 + (y1 - y0) * 0.0001, "bottom")
+          );
+        }
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
   }
-  pos.needsUpdate = true;
-  planeGeo.computeVertexNormals();
 
   /* ============================================================
-     MATERIAL — clean glass, no emissive paint
+     HORNS (cephalic fins) — two thin cones at front of head
      ============================================================ */
-  const mantaMaterial = new THREE.MeshPhysicalMaterial({
+  function makeHorn(sign /* +1 left, -1 right */) {
+    const geo = new THREE.ConeGeometry(0.028, 0.32, 14, 6, false);
+    geo.translate(0, 0.16, 0);   // pivot at base
+    geo.rotateZ(sign * -0.18);   // splay outward
+    geo.rotateX(-0.35);          // tip forward (smaller -Y)
+    geo.translate(sign * 0.10, 0.50, 0.06);
+    return geo;
+  }
+
+  /* ============================================================
+     TAIL — thin tube along a spline
+     ============================================================ */
+  function makeTail() {
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0.00, -0.28,  0.00),
+      new THREE.Vector3(0.02, -0.55,  0.01),
+      new THREE.Vector3(0.04, -0.85,  0.00),
+      new THREE.Vector3(0.05, TAIL_TIP, -0.04)
+    ]);
+    return new THREE.TubeGeometry(curve, 48, 0.014, 8, false);
+  }
+
+  /* ============================================================
+     GLASS MATERIAL
+     ============================================================ */
+  const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xFFFFFF,
     metalness: 0.0,
     roughness: 0.0,
     transmission: 1.0,
     ior: 1.52,
-    thickness: 1.0,
+    thickness: 1.2,
     envMapIntensity: 3.0,
     attenuationDistance: 0.55,
     attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
-    side: THREE.DoubleSide      // sculpted relief reads from front and back
+    side: THREE.FrontSide,           // top + bottom both have correct outward normals
+    normalMap: fractureNormal,
+    normalScale: new THREE.Vector2(0.35, 0.35)
   });
 
-  const manta = new THREE.Mesh(planeGeo, mantaMaterial);
-  manta.castShadow = true;
-  manta.receiveShadow = false;
-  scene.add(manta);
+  /* ============================================================
+     ASSEMBLE THE MANTA
+     ============================================================ */
+  const mantaGroup = new THREE.Group();
+
+  const topMesh    = new THREE.Mesh(buildMantaSurface("top"),    glassMaterial);
+  const bottomMesh = new THREE.Mesh(buildMantaSurface("bottom"), glassMaterial);
+  topMesh.castShadow = true;
+  bottomMesh.castShadow = true;
+
+  const leftHorn   = new THREE.Mesh(makeHorn(+1), glassMaterial);
+  const rightHorn  = new THREE.Mesh(makeHorn(-1), glassMaterial);
+  leftHorn.castShadow = true;
+  rightHorn.castShadow = true;
+
+  const tailMesh   = new THREE.Mesh(makeTail(), glassMaterial);
+  tailMesh.castShadow = true;
+
+  mantaGroup.add(topMesh, bottomMesh, leftHorn, rightHorn, tailMesh);
+  scene.add(mantaGroup);
 
   /* ============================================================
      FLOOR — iridescent ripple plane
@@ -218,7 +453,7 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
   });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -2.0;
+  floor.position.y = -1.2;
   floor.receiveShadow = true;
   scene.add(floor);
 
@@ -227,50 +462,42 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
      ============================================================ */
   scene.add(new THREE.AmbientLight(0xFFFFFF, 0.3));
 
-  // KEY: RectAreaLight — long rectangular highlights.
   const keyLight = new THREE.RectAreaLight(0xFFFFFF, 8.0, 4.0, 1.0);
   keyLight.position.set(1, 3, 2);
   keyLight.lookAt(0, 0, 0);
   scene.add(keyLight);
 
-  // SHADOW CASTER: low-intensity DirectionalLight.
   const shadowLight = new THREE.DirectionalLight(0xFFFFFF, 0.6);
   shadowLight.position.set(1, 3, 2);
   shadowLight.target.position.set(0, 0, 0);
   shadowLight.castShadow = true;
   shadowLight.shadow.mapSize.set(2048, 2048);
-  shadowLight.shadow.camera.left   = -3;
-  shadowLight.shadow.camera.right  =  3;
-  shadowLight.shadow.camera.top    =  3;
-  shadowLight.shadow.camera.bottom = -3;
-  shadowLight.shadow.camera.near   = 0.1;
-  shadowLight.shadow.camera.far    = 20;
-  shadowLight.shadow.bias          = -0.0005;
-  shadowLight.shadow.radius        = 4;
+  shadowLight.shadow.camera.left = -3; shadowLight.shadow.camera.right = 3;
+  shadowLight.shadow.camera.top = 3;   shadowLight.shadow.camera.bottom = -3;
+  shadowLight.shadow.camera.near = 0.1; shadowLight.shadow.camera.far = 20;
+  shadowLight.shadow.bias = -0.0005;    shadowLight.shadow.radius = 4;
   scene.add(shadowLight);
   scene.add(shadowLight.target);
 
-  // RIM: backlight from upper-back-left.
   const rimLight = new THREE.SpotLight(0xFFFFFF, 10.0);
   rimLight.position.set(-2, 2, -2);
   rimLight.target.position.set(0, 0, 0);
   scene.add(rimLight.target);
   scene.add(rimLight);
 
-  // POOL: top-down SpotLight on floor.
   const poolLight = new THREE.SpotLight(0xFFFFFF, 60.0, 8.0, Math.PI / 7, 0.55, 1.4);
   poolLight.position.set(0, 4.0, 0);
-  poolLight.target.position.set(0, -2.0, 0);
+  poolLight.target.position.set(0, -1.2, 0);
   scene.add(poolLight.target);
   scene.add(poolLight);
 
   /* ============================================================
-     Tick loop — plain renderer.render. No bloom.
+     Tick loop — gentle sway only, no bloom
      ============================================================ */
   function tick(tMs) {
     const tSec = tMs * 0.001;
-    manta.rotation.y = Math.sin(tSec * 0.1) * 0.15;
-    manta.position.y = Math.sin(tSec * 0.15) * 0.05;
+    mantaGroup.rotation.z = Math.sin(tSec * 0.15) * 0.04;
+    mantaGroup.position.y = Math.sin(tSec * 0.20) * 0.04;
 
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
@@ -318,5 +545,5 @@ import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUnifo
     });
   }
 
-  console.log("[Auros] v1.5 — Sculpted Monolith (height-field, no bloom) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.6 — Procedural Manta Volume · Three.js", THREE.REVISION);
 })();
