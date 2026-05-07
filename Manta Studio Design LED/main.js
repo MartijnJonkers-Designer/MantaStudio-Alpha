@@ -209,15 +209,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     transmission: 1.0,
     ior: 1.65,
     thickness: 4.0,
-    envMapIntensity: 1.5,                        // v1.12 — was 3.0; less white env reflected back
+    envMapIntensity: 2.0,                        // v1.13 — was 1.5; modest bump for reflective sparkle
     attenuationDistance: 0.4,
     attenuationColor: new THREE.Color(0x70BFFF),
     transparent: true,
     side: THREE.DoubleSide,
-    clearcoat: 0.5,                              // v1.12 — was 1.0; less aggressive gloss
-    clearcoatRoughness: 0.1,
+    clearcoat: 0.5,
+    clearcoatRoughness: 0.04,                    // v1.13 — was 0.10; mirror-finish clearcoat (crystalline)
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(1.0, 1.0)
+    normalScale: new THREE.Vector2(1.5, 1.5)     // v1.13 — was 1.0; cracks more visible
   });
 
   /* ============================================================
@@ -311,7 +311,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      ============================================================ */
   scene.add(new THREE.AmbientLight(0xFFFFFF, 0.3));
 
-  const keyLight = new THREE.RectAreaLight(0xFFFFFF, 8.0, 4.0, 1.0);
+  const keyLight = new THREE.RectAreaLight(0xFFFFFF, 12.0, 4.0, 1.0);   // v1.13 — was 8.0; punchier dorsal hot-spots
   keyLight.position.set(1, 3, 2);
   keyLight.lookAt(0, 0, 0);
   scene.add(keyLight);
@@ -353,9 +353,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.15,   // v1.12 — was 0.4; bloom kisses, doesn't bleed
+    0.25,   // v1.13 — was 0.15; bloom now reads above noise floor
     0.6,    // radius
-    1.25    // v1.12 — was 1.05; way tighter, only the brightest pixels qualify
+    1.25    // threshold preserved — only brightest pixels qualify
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -414,5 +414,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.12 — Global dim (exposure, envMap, bloom, clearcoat all down) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.13 — Restore selective brights (key light + clearcoat sharp + crack contrast) · Three.js", THREE.REVISION);
 })();
