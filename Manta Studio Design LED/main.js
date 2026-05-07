@@ -26,6 +26,10 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
@@ -79,40 +83,48 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
   /* ============================================================
      PROCEDURAL TEXTURES — ripples (floor) + fractures (manta normal)
      ============================================================ */
+  // v1.11 — much more saturated bands, looser spacing, clearer cyan/lavender alternation
   function makeRippleTexture() {
     const size = 1024;
     const c = document.createElement("canvas");
     c.width = c.height = size;
     const ctx = c.getContext("2d");
-    ctx.fillStyle = "#F4F6FA";
+    ctx.fillStyle = "#F8FAFD";
     ctx.fillRect(0, 0, size, size);
     const cx = size * 0.5, cy = size * 0.5, maxR = size * 0.6;
-    for (let r = 4; r < maxR; r += 3) {
+
+    // Dense fine rings — alpha 3x stronger, saturation pegged
+    for (let r = 4; r < maxR; r += 4) {
       const t = r / maxR;
-      const hue = 180 + Math.sin(t * 7.0) * 50 + 30 * t;
-      const sat = 65 - t * 25;
-      const light = 78 + Math.sin(t * 22.0) * 8;
-      const alpha = 0.22 * (1.0 - t * 0.7);
-      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, ${sat.toFixed(1)}%, ${light.toFixed(1)}%, ${alpha.toFixed(3)})`;
-      ctx.lineWidth = 1.5;
+      const hue = 185 + Math.sin(t * 6.0) * 75;     // sweeps 110 (cyan) <-> 260 (lavender)
+      const sat = 85;                                // was variable; now hard-pegged
+      const light = 72 + Math.sin(t * 18.0) * 6;
+      const alpha = 0.55 * (1.0 - t * 0.5);          // was 0.22 * ... = roughly 2.5x more opaque
+      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, ${sat}%, ${light.toFixed(1)}%, ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
     }
-    for (let r = 14; r < maxR; r += 28) {
+
+    // Punchier highlight rings every 32px
+    for (let r = 18; r < maxR; r += 32) {
       const t = r / maxR;
-      const hue = 200 + Math.sin(t * 4.0) * 50;
-      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, 70%, 88%, ${(0.35 * (1.0 - t)).toFixed(3)})`;
-      ctx.lineWidth = 2.5;
+      const hue = 195 + Math.sin(t * 3.5) * 65;
+      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, 90%, 75%, ${(0.75 * (1.0 - t)).toFixed(3)})`;
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.stroke();
     }
-    const edgeGrad = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, size * 0.5);
+
+    // Soft edge fade so floor blends into BG
+    const edgeGrad = ctx.createRadialGradient(cx, cy, maxR * 0.65, cx, cy, size * 0.5);
     edgeGrad.addColorStop(0.0, "rgba(255,255,255,0)");
     edgeGrad.addColorStop(1.0, "rgba(255,255,255,1)");
     ctx.fillStyle = edgeGrad;
     ctx.fillRect(0, 0, size, size);
+
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
@@ -195,15 +207,17 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     metalness: 0.0,
     roughness: 0.0,
     transmission: 1.0,
-    ior: 1.52,
-    thickness: 1.2,
+    ior: 1.65,                                   // v1.11 — was 1.52; sharper refraction
+    thickness: 4.0,                              // v1.11 — was 1.2; much more cyan accumulation
     envMapIntensity: 3.0,
-    attenuationDistance: 0.18,        // v1.9 — was 0.30; even deeper cyan
-    attenuationColor: new THREE.Color(0xC0E8FF),
+    attenuationDistance: 0.4,                    // v1.11 — was 0.18; relaxed because thickness is 3x
+    attenuationColor: new THREE.Color(0x70BFFF), // v1.11 — was 0xC0E8FF; deeper cyan-blue tint
     transparent: true,
     side: THREE.DoubleSide,
+    clearcoat: 1.0,                              // v1.11 — added; glossy outer shell, crisper edges
+    clearcoatRoughness: 0.1,
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(1.0, 1.0)     // v1.9 — was 0.65; cracks pop
+    normalScale: new THREE.Vector2(1.0, 1.0)
   });
 
   /* ============================================================
@@ -327,12 +341,32 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
   scene.add(poolLight);
 
   /* ============================================================
-     Tick loop — drive animation mixer if present
+     POST-PROCESSING — selective bloom on highlights only
+     v1.11 — back from v1.5+ era, but tuned much tighter:
+     threshold 1.05 keeps the off-white BG well below threshold,
+     so only specular hot-spots and cyan attenuation peaks bloom.
+     ============================================================ */
+  const composer = new EffectComposer(renderer);
+  composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  composer.setSize(window.innerWidth, window.innerHeight);
+  composer.addPass(new RenderPass(scene, camera));
+
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.4,    // strength — subtle
+    0.6,    // radius
+    1.05    // threshold — above white BG luminance, only HDR highlights bloom
+  );
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+
+  /* ============================================================
+     Tick loop — drive animation mixer if present, then composer
      ============================================================ */
   function tick() {
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
-    renderer.render(scene, camera);
+    composer.render();
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
@@ -344,6 +378,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight, false);
+    composer.setSize(window.innerWidth, window.innerHeight);
+    bloomPass.setSize(window.innerWidth, window.innerHeight);
   });
 
   /* ============================================================
@@ -378,5 +414,5 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     });
   }
 
-  console.log("[Auros] v1.10 — Alignment pass 3 (rotation flip + smaller manta) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.11 — Material punchup + ripple saturation + selective bloom · Three.js", THREE.REVISION);
 })();
