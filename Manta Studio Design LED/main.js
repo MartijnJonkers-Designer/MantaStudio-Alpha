@@ -59,33 +59,30 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  /* -------- Geometry: ExtrudeGeometry from manta-wing Shape --------
-     10-point aerodynamic chevron silhouette extruded with a heavy
-     bevel (size + thickness 0.5) so the slab is thick in the middle
-     and rounds off softly at the edges — gemstone/monolith feel.
-
-     Shape pre-bevel is ~0.8 x 0.7 units; bevel adds 0.5 outward in
-     XY and 0.5 each side in Z, so final bbox is ~1.8 x 1.7 x 1.1 —
-     fits the camera frame at z = 2.5 / FOV 45. */
+  /* -------- Geometry: wider stealth-bomber chevron --------
+     Proportions widened to 1.2 x 0.6 (was 0.8 x 0.7) for a more
+     aggressive horizontal presence. Bevel sharpened to keep wing
+     tips pointed: bevelSize 0.12 / bevelThickness 0.15 (was 0.50/0.50).
+     Final bbox ~1.44 x 0.84 x 0.40 — fits camera at z=2.5 / FOV 45. */
   const mantaShape = new THREE.Shape();
-  mantaShape.moveTo( 0.00,  0.35);    // nose tip (top center)
-  mantaShape.lineTo(-0.12,  0.20);    // upper-left shoulder
-  mantaShape.lineTo(-0.40,  0.04);    // far left wing tip
-  mantaShape.lineTo(-0.10, -0.06);    // left trailing inflection
-  mantaShape.lineTo(-0.04, -0.28);    // left tail base
-  mantaShape.lineTo( 0.00, -0.32);    // tail tip
-  mantaShape.lineTo( 0.04, -0.28);    // right tail base
-  mantaShape.lineTo( 0.10, -0.06);    // right trailing inflection
-  mantaShape.lineTo( 0.40,  0.04);    // far right wing tip
-  mantaShape.lineTo( 0.12,  0.20);    // upper-right shoulder
+  mantaShape.moveTo( 0.00,  0.30);    // nose tip (top center)
+  mantaShape.lineTo(-0.18,  0.18);    // upper-left shoulder
+  mantaShape.lineTo(-0.60,  0.04);    // far left wing tip
+  mantaShape.lineTo(-0.15, -0.05);    // left trailing inflection
+  mantaShape.lineTo(-0.06, -0.27);    // left tail base
+  mantaShape.lineTo( 0.00, -0.30);    // tail tip
+  mantaShape.lineTo( 0.06, -0.27);    // right tail base
+  mantaShape.lineTo( 0.15, -0.05);    // right trailing inflection
+  mantaShape.lineTo( 0.60,  0.04);    // far right wing tip
+  mantaShape.lineTo( 0.18,  0.18);    // upper-right shoulder
   mantaShape.closePath();
 
   const extrudeSettings = {
-    depth:           0.10,    // per brief — thin slab pre-bevel
+    depth:           0.10,
     bevelEnabled:    true,
-    bevelSegments:   8,       // 8 segments for smooth large-bevel curve
-    bevelSize:       0.50,    // per brief — heavy XY bevel
-    bevelThickness:  0.50,    // per brief — heavy Z bevel
+    bevelSegments:   6,       // smaller bevel needs fewer segments
+    bevelSize:       0.12,    // per v0.22 brief — sharp aerodynamic edges
+    bevelThickness:  0.15,    // per v0.22 brief
     curveSegments:   12,
   };
   const geometry = new THREE.ExtrudeGeometry(mantaShape, extrudeSettings);
@@ -95,7 +92,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
     color:               0xE8F4FF,    // pale icy blue
     transmission:        1.0,         // per brief
-    thickness:           5.0,         // per brief — heavy refraction
+    thickness:           2.5,         // per v0.22 brief — high-clarity crystal
     roughness:           0.05,        // per brief — near-smooth
     ior:                 1.5,         // per brief
     attenuationDistance: 1.5,
@@ -143,9 +140,9 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   function tick(tMs) {
     const tSec = tMs * 0.001;
 
-    // Idle rocking — slow yaw + sine bob in Y
-    manta.rotation.y = Math.sin(tSec * 0.30) * 0.18;
-    manta.position.y = Math.sin(tSec * 0.45) * 0.04;
+    // Idle rocking — slow yaw + sine bob (heavy underwater feel per v0.22)
+    manta.rotation.y = Math.sin(tSec * 0.15) * 0.18;
+    manta.position.y = Math.sin(tSec * 0.20) * 0.04;
 
     // Cyan pulse: phase 0..1 over PULSE_PERIOD, with a sharp peak
     // near phase 0 that quickly decays. emissive set to arctic blue,
@@ -192,5 +189,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.21 — Refractive Beveled Manta Shape · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.22 — Sharp Precision · Three.js", THREE.REVISION);
 })();

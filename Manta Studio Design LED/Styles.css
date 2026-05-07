@@ -46,6 +46,7 @@ html, body {
   font-size: 10px;
   letter-spacing: 0.18em;
   color: var(--ink-dark);
+  opacity: 0.7;                  /* per v0.22 brief — softer than pure black */
   pointer-events: none;
   white-space: nowrap;
 }
