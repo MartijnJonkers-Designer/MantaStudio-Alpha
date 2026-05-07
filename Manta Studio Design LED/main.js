@@ -1,17 +1,17 @@
 /* ============================================================
-   AUROS — Ethereal Ice (v0.20)
+   AUROS — Ethereal Ice (v0.21)
 
-   v0.19 changed two things per brief:
-     - Geometry: ExtrudeGeometry (manta silhouette) -> TorusKnotGeometry
-       flattened on Z. NOTE: this is a knotted ribbon, not a manta
-       silhouette. Procedural primitives can't yield the sculpted
-       manta from the reference; a .glb model would.
-     - Material params bumped per spec: thickness 5.0, roughness 0.05,
-       ior 1.5. Inner PointLight added as a child of the mesh so it
-       'glows from within' as the knot rotates.
-     - Env map (RoomEnvironment + PMREMGenerator) preserved — the
-       transmission needs something to refract.
-     - CTA gets a silver border.
+   Pivots the geometry from v0.20's TorusKnot back to an extruded
+   manta-wing silhouette — a 10-point aerodynamic chevron Shape with
+   heavy bevel. Material, env map, inner glow, pulse, HUDs, magnetic
+   CTA all preserved from v0.20.
+
+   - 10-point Shape pre-bevel ~0.8 x 0.7 units
+   - ExtrudeGeometry with depth 0.10, bevelSize 0.50, bevelThickness 0.50
+     (per brief — heavy bevel rounds the slab into a faceted gemstone)
+   - 8 bevel segments for smooth large-bevel curves
+   - MeshPhysicalMaterial unchanged: transmission 1.0, thickness 5.0,
+     roughness 0.05, ior 1.5
    ============================================================ */
 
 import * as THREE from "three";
@@ -59,12 +59,38 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  /* -------- Geometry: flattened TorusKnot per brief --------
-     TorusKnotGeometry(10, 3, 100, 16) at native scale is huge
-     (bbox ~26x26x6). Scaled to 0.04 horizontal, 0.004 vertical
-     so it fits the camera frame and reads as a flat ribbon. */
-  const geometry = new THREE.TorusKnotGeometry(10, 3, 100, 16);
-  geometry.scale(0.04, 0.04, 0.004);
+  /* -------- Geometry: ExtrudeGeometry from manta-wing Shape --------
+     10-point aerodynamic chevron silhouette extruded with a heavy
+     bevel (size + thickness 0.5) so the slab is thick in the middle
+     and rounds off softly at the edges — gemstone/monolith feel.
+
+     Shape pre-bevel is ~0.8 x 0.7 units; bevel adds 0.5 outward in
+     XY and 0.5 each side in Z, so final bbox is ~1.8 x 1.7 x 1.1 —
+     fits the camera frame at z = 2.5 / FOV 45. */
+  const mantaShape = new THREE.Shape();
+  mantaShape.moveTo( 0.00,  0.35);    // nose tip (top center)
+  mantaShape.lineTo(-0.12,  0.20);    // upper-left shoulder
+  mantaShape.lineTo(-0.40,  0.04);    // far left wing tip
+  mantaShape.lineTo(-0.10, -0.06);    // left trailing inflection
+  mantaShape.lineTo(-0.04, -0.28);    // left tail base
+  mantaShape.lineTo( 0.00, -0.32);    // tail tip
+  mantaShape.lineTo( 0.04, -0.28);    // right tail base
+  mantaShape.lineTo( 0.10, -0.06);    // right trailing inflection
+  mantaShape.lineTo( 0.40,  0.04);    // far right wing tip
+  mantaShape.lineTo( 0.12,  0.20);    // upper-right shoulder
+  mantaShape.closePath();
+
+  const extrudeSettings = {
+    depth:           0.10,    // per brief — thin slab pre-bevel
+    bevelEnabled:    true,
+    bevelSegments:   8,       // 8 segments for smooth large-bevel curve
+    bevelSize:       0.50,    // per brief — heavy XY bevel
+    bevelThickness:  0.50,    // per brief — heavy Z bevel
+    curveSegments:   12,
+  };
+  const geometry = new THREE.ExtrudeGeometry(mantaShape, extrudeSettings);
+  geometry.center();
+  geometry.rotateX(-Math.PI / 2);     // lay flat in XZ plane (Y up)
 
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
     color:               0xE8F4FF,    // pale icy blue
@@ -166,5 +192,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.20 — Refractive TorusKnot · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.21 — Refractive Beveled Manta Shape · Three.js", THREE.REVISION);
 })();
