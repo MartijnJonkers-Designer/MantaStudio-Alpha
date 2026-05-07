@@ -1,9 +1,9 @@
 /* ============================================================
-   AUROS — baseline styles (v0.11 Slate & Lavender reset)
+   AUROS — baseline styles
 
-   Slate ground (overridden by Three.js clearColor), full-viewport
-   WebGL canvas, centered headline. Theme-specific accents live in
-   the inline <style> block in Index.html.
+   Slate ground (overridden by Three.js clearColor at runtime),
+   full-viewport WebGL canvas. No text on the page right now —
+   just the shader.
    ============================================================ */
 
 :root {
@@ -19,7 +19,6 @@ html, body {
   background: var(--bg);
   color: var(--ink);
   overflow: hidden;
-  font-family: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -31,23 +30,4 @@ html, body {
   height: 100%;
   z-index: 0;
   display: block;
-}
-
-.headline {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-family: "Geist Mono", ui-monospace, monospace;
-  font-weight: 900;
-  font-size: 18vw;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  color: var(--ink);
-  text-transform: uppercase;
-  pointer-events: none;
-  padding: 0 4vw;
 }
