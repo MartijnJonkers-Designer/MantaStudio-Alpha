@@ -37,7 +37,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     0.1,
     50
   );
-  camera.position.set(0, 0, 4);            // per v0.23 — head-on view
+  camera.position.set(0, 0, 5.0);          // wings span ~75% of screen at FOV 45
   camera.lookAt(0, 0, 0);
 
   /* -------- Renderer (per brief: antialias true, pixelRatio capped at 2) -------- */
@@ -59,46 +59,47 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  /* -------- Geometry: precision manta silhouette via quadraticCurveTo --------
-     Per v0.23 brief — coordinate map drawn with smooth Bezier curves
-     for swept aerodynamic wings. Pre-bevel bbox: 2.4 x 1.0 (X: -1.2..+1.2,
-     Y: -0.6..+0.4). Bevel adds 0.10 outward + 0.15 each side in Z.
-     Final bbox ~2.6 x 1.2 x 0.35 — head-on visible at camera z=4 / FOV 45. */
+  /* -------- Geometry: cubic-Bezier manta silhouette per v0.24 vertex map --------
+     Pre-bevel bbox: 3.0 x 1.3 (X: -1.5..+1.5, Y: -0.8..+0.5).
+     Wings extend wider; tail extends deeper than v0.23 — sharper sweep.
+     Bevel 0.05 is only 1.6% of width — keeps wing tips pointy.
+     Final bbox ~3.1 x 1.4 x 0.22 — wings span ~75% of screen at z=5.0. */
   const mantaShape = new THREE.Shape();
-  mantaShape.moveTo(0.0, 0.4);                              // Nose / head
-  mantaShape.quadraticCurveTo( 0.1,  0.4,   1.2,  0.0);     // -> right wing tip
-  mantaShape.quadraticCurveTo( 0.1, -0.2,   0.0, -0.6);     // -> tail point
-  mantaShape.quadraticCurveTo(-0.1, -0.2,  -1.2,  0.0);     // -> left wing tip
-  mantaShape.quadraticCurveTo(-0.1,  0.4,   0.0,  0.4);     // -> back to nose
+  mantaShape.moveTo(0,    0.5);                                       // Head
+  mantaShape.bezierCurveTo( 0.3,  0.5,   0.8,  0.2,   1.5,  0);       // Top of right wing -> tip
+  mantaShape.bezierCurveTo( 0.8, -0.2,   0.2, -0.3,   0.05, -0.8);    // Bottom of right wing -> tail
+  mantaShape.lineTo(-0.05, -0.8);                                     // Tail tip
+  mantaShape.bezierCurveTo(-0.2, -0.3,  -0.8, -0.2,  -1.5,  0);       // Bottom of left wing -> tip
+  mantaShape.bezierCurveTo(-0.8,  0.2,  -0.3,  0.5,   0,    0.5);     // Top of left wing -> head
 
   const extrudeSettings = {
-    depth:           0.05,    // per v0.23 brief — flat aerodynamic monolith
+    depth:           0.02,    // per v0.24 brief — very thin slab
     bevelEnabled:    true,
-    bevelSegments:   8,       // per v0.23 brief
-    bevelSize:       0.10,    // per v0.23 brief
-    bevelThickness:  0.15,    // per v0.23 brief
-    curveSegments:   24,      // smooth quadratic curves
+    bevelSegments:   3,       // per v0.24 brief
+    bevelSize:       0.05,    // per v0.24 brief — small bevel preserves sharp tips
+    bevelThickness:  0.10,    // per v0.24 brief
+    curveSegments:   32,      // dense sampling so cubic Beziers stay smooth
   };
   const geometry = new THREE.ExtrudeGeometry(mantaShape, extrudeSettings);
   geometry.center();
-  /* No rotateX — geometry stays in XY plane so its broad face points
-     at the camera (which is now head-on at z=4). */
+  /* No rotateX — geometry stays in XY plane facing the camera at z=5. */
 
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color:               0xFFFFFF,    // per v0.23 brief — pure white, ice from env
-    metalness:           0.0,         // per v0.23 brief
-    transmission:        1.0,
-    thickness:           2.5,
-    roughness:           0.02,        // per v0.23 brief — near-mirror smooth
-    ior:                 1.5,
-    envMapIntensity:     2.5,         // per v0.23 brief — boost env reflections
+    color:               0xFFFFFF,    // pure white — ice color comes from env
+    metalness:           0.0,
+    transmission:        1.0,         // per v0.24 brief
+    thickness:           2.0,         // per v0.24 brief (down from 2.5)
+    roughness:           0.02,
+    ior:                 1.5,         // per v0.24 brief
+    envMapIntensity:     3.0,         // per v0.24 brief (up from 2.5)
     attenuationDistance: 1.5,
-    attenuationColor:    new THREE.Color(0xC0DDE8),
-    clearcoat:           0.7,
-    clearcoatRoughness:  0.08,
+    attenuationColor:    new THREE.Color(0xFFFFFF),  // white — no internal blue tint
+    transparent:         true,        // per v0.24 brief
+    opacity:             1.0,         // per v0.24 brief
     emissive:            new THREE.Color(ARCTIC_BLUE),
     emissiveIntensity:   0.0,         // animated by pulse
     side:                THREE.DoubleSide,
+    /* clearcoat removed in v0.24 — was contributing to 'plastic' feel */
   });
 
   const manta = new THREE.Mesh(geometry, mantaMaterial);
@@ -188,5 +189,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.23 — Precision Manta Silhouette · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.24 — Vertex-Mapped Manta · Three.js", THREE.REVISION);
 })();
