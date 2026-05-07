@@ -1,5 +1,5 @@
 /* ============================================================
-   AUROS — Ethereal Ice (v0.21)
+   AUROS — Ethereal Ice (v0.27)
 
    Pivots the geometry from v0.20's TorusKnot back to an extruded
    manta-wing silhouette — a 10-point aerodynamic chevron Shape with
@@ -197,5 +197,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.26 — Ice Revival · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.27 — Ice Revival (live) · Three.js", THREE.REVISION);
 })();
