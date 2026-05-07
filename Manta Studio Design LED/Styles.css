@@ -69,7 +69,7 @@ html, body {
   font-size: 11px;
   letter-spacing: 0.22em;
   padding: 16px 32px;
-  border: 0;
+  border: 1px solid #C0C0C0;     /* silver border per brief */
   border-radius: 2px;
   cursor: pointer;
   transform: translate(-50%, 0);

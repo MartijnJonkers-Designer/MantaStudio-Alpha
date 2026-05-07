@@ -1,21 +1,17 @@
 /* ============================================================
-   AUROS — Ethereal Ice (v0.19)
+   AUROS — Ethereal Ice (v0.20)
 
-   Total pivot from point cloud to a translucent ice mesh on a
-   light Storm-White ground. Architecture:
-     - ExtrudeGeometry from manta silhouette Shape (8-vertex stealth
-       wedge, beveled for rounded edges) — abstract chunky ice slab,
-       not a sculpted .glb model.
-     - MeshPhysicalMaterial with transmission + thickness for
-       refraction. Environment map from RoomEnvironment provides
-       something to refract through.
-     - Pulse: emissiveIntensity oscillates every ~4s with emissive
-       set to Arctic Blue (#00FFFF). Whole material flashes briefly,
-       edges read brightest because that's where transmission is
-       least effective.
-     - Slow Y-axis idle rocking for life.
-     - Magnetic CTA: pure JS pointermove handler, button translates
-       toward cursor when within 100px.
+   v0.19 changed two things per brief:
+     - Geometry: ExtrudeGeometry (manta silhouette) -> TorusKnotGeometry
+       flattened on Z. NOTE: this is a knotted ribbon, not a manta
+       silhouette. Procedural primitives can't yield the sculpted
+       manta from the reference; a .glb model would.
+     - Material params bumped per spec: thickness 5.0, roughness 0.05,
+       ior 1.5. Inner PointLight added as a child of the mesh so it
+       'glows from within' as the knot rotates.
+     - Env map (RoomEnvironment + PMREMGenerator) preserved — the
+       transmission needs something to refract.
+     - CTA gets a silver border.
    ============================================================ */
 
 import * as THREE from "three";
@@ -63,50 +59,38 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  /* -------- Manta geometry: extruded 8-vertex stealth wedge --------
-     Same silhouette we used in earlier versions, lifted into 3D
-     via ExtrudeGeometry with beveled edges so light catches them. */
-  const mantaShape = new THREE.Shape();
-  mantaShape.moveTo( 0.00,  0.45);    // nose tip (top center)
-  mantaShape.lineTo(-0.65,  0.05);    // far left wingtip
-  mantaShape.lineTo(-0.20, -0.05);    // left trailing inflection
-  mantaShape.lineTo(-0.06, -0.42);    // left tail base
-  mantaShape.lineTo( 0.00, -0.48);    // tail tip
-  mantaShape.lineTo( 0.06, -0.42);    // right tail base
-  mantaShape.lineTo( 0.20, -0.05);    // right trailing inflection
-  mantaShape.lineTo( 0.65,  0.05);    // far right wingtip
-  mantaShape.closePath();
-
-  const extrudeSettings = {
-    depth:           0.22,
-    bevelEnabled:    true,
-    bevelSegments:   6,
-    bevelSize:       0.035,
-    bevelThickness:  0.040,
-    curveSegments:   12,
-  };
-  const geometry = new THREE.ExtrudeGeometry(mantaShape, extrudeSettings);
-  geometry.center();
-  geometry.rotateX(-Math.PI / 2);     // lay flat in XZ plane (Y up)
+  /* -------- Geometry: flattened TorusKnot per brief --------
+     TorusKnotGeometry(10, 3, 100, 16) at native scale is huge
+     (bbox ~26x26x6). Scaled to 0.04 horizontal, 0.004 vertical
+     so it fits the camera frame and reads as a flat ribbon. */
+  const geometry = new THREE.TorusKnotGeometry(10, 3, 100, 16);
+  geometry.scale(0.04, 0.04, 0.004);
 
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color:               0xE8F4FF,    // very pale icy blue
-    transmission:        1.0,
-    roughness:           0.10,
-    thickness:           2.0,
-    ior:                 1.40,
+    color:               0xE8F4FF,    // pale icy blue
+    transmission:        1.0,         // per brief
+    thickness:           5.0,         // per brief — heavy refraction
+    roughness:           0.05,        // per brief — near-smooth
+    ior:                 1.5,         // per brief
     attenuationDistance: 1.5,
     attenuationColor:    new THREE.Color(0xC0DDE8),
-    clearcoat:           0.6,
-    clearcoatRoughness:  0.10,
+    clearcoat:           0.7,
+    clearcoatRoughness:  0.08,
     emissive:            new THREE.Color(ARCTIC_BLUE),
     emissiveIntensity:   0.0,         // animated by pulse
     side:                THREE.DoubleSide,
   });
 
   const manta = new THREE.Mesh(geometry, mantaMaterial);
-  manta.rotation.x = -0.18;           // slight forward tilt
+  manta.rotation.x = -0.25;           // slight forward tilt to show depth
   scene.add(manta);
+
+  /* -------- Inner glow PointLight --------
+     Child of the mesh so it follows rotation/position. Pale icy
+     blue, moderate intensity, range limited to within the knot. */
+  const innerLight = new THREE.PointLight(0xC0E8FF, 1.5, 2.5, 1.5);
+  innerLight.position.set(0, 0.05, 0);
+  manta.add(innerLight);
 
   /* -------- Lights --------
      Soft ambient + directional gives the ice subtle highlights even
@@ -182,5 +166,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.19 — Ethereal Ice · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.20 — Refractive TorusKnot · Three.js", THREE.REVISION);
 })();
