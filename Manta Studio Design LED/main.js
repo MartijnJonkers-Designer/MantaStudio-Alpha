@@ -59,7 +59,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.1;
+  renderer.toneMappingExposure = 0.8;   // v1.2 — was 1.1; off-white BG so manta pops
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -180,7 +180,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      MATERIAL — diamond glass + displacement + fractures
      ============================================================ */
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0xffffff,
+    color: 0x888888,                  // v1.2 — was 0xffffff; mid-grey tints the
+                                      // transmitted light so the manta is visibly
+                                      // darker than the white BG behind it.
     metalness: 0.0,
     roughness: 0.0,
     transmission: 1.0,
@@ -190,6 +192,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     attenuationDistance: 0.25,
     attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
+    opacity: 0.9,                     // v1.2 — was implicit 1.0; gives 10%
+                                      // alpha-blend visibility on top of transmission
     emissive: new THREE.Color(ARCTIC_BLUE),
     emissiveIntensity: 0.0,
 
@@ -280,15 +284,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   composer.addPass(new RenderPass(scene, camera));
 
-  // v1.1 — threshold raised from 0.1 to 1.05. On a white background (luminance 1.0),
-  // threshold 0.1 made the entire frame exceed threshold, so bloom blurred everything
-  // into white-on-white slop and the transmissive manta vanished. Threshold must be
-  // ABOVE white BG luminance — only the HDR-bright emissive pulse (now peak 3.0) blooms.
+  // v1.2 — selective bloom: only the cyan pulse crosses threshold.
+  // Combined with toneMappingExposure 0.8, BG sits below 1.0 luminance.
+  // Pulse peak 3.0 is the only thing that exceeds threshold 1.0 -> only it blooms.
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    2.0,   // strength (per spec)
-    0.5,   // radius   (per spec)
-    1.05   // threshold (was 0.1 — see comment above)
+    1.2,   // strength  (v1.2 — was 2.0; less aggressive halo)
+    0.5,   // radius    (per spec)
+    1.0    // threshold (v1.2 — was 1.05)
   );
   composer.addPass(bloomPass);
 
@@ -358,5 +361,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.1 — Cinematic fix (bloom threshold, displacement bias) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.2 — Out of the fog (selective bloom + grey crystal) · Three.js", THREE.REVISION);
 })();
