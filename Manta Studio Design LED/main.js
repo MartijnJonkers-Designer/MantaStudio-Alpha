@@ -1,18 +1,15 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.11 (Slate & Lavender reset)
+   AUROS — Liquid Engine v0.12 (Halftone topology mesh)
 
-   Clean reset to the v0.2 architecture with a new palette.
-   No logo masking, no luma tracing, no ambient current, no specular,
-   no slow drift, no heavy viscosity. Just:
-     - fbm liquid surface (5 octaves + domain warping)
-     - mouse ripple wake (snappy v0.2 settle, ~1.5s)
-     - slate-to-lavender palette mix
-     - subtle bloom on the lavender peaks
+   Same fbm liquid math as v0.11 underneath, but rendered as a
+   halftone dot pattern instead of a smooth gradient. The dot grid
+   is sampled in the SAME domain-warped coordinates as the height
+   field, so dot rows visibly bend along the wave contours and
+   swirl around the mouse-driven ripple — matching the topographical
+   "point mesh" look of the reference image.
 
-   Palette:
-     cValley = #1A1B26 (Tokyo Night slate)
-     cPeak   = #BB9AF7 (soft lavender)
-     headline period accent = #9ECE6A (pale lime, in CSS)
+   Pipeline:
+     ShaderMaterial -> RenderPass -> UnrealBloomPass (subtle) -> OutputPass
    ============================================================ */
 
 import * as THREE from "three";
@@ -40,7 +37,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x1A1B26, 1);   // Tokyo Night slate
+  renderer.setClearColor(0x1A1B26, 1);
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -109,37 +106,68 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     }
 
     /* Palette.
-       cValley = #1A1B26 (Tokyo Night slate)
-       cPeak   = #BB9AF7 (soft lavender) */
-    const vec3 cValley = vec3(0.1020, 0.1059, 0.1490);
-    const vec3 cPeak   = vec3(0.7333, 0.6039, 0.9686);
+       cValley = #1A1B26 (slate)  cPeak = #BB9AF7 (soft lavender) */
+    const vec3  cValley     = vec3(0.1020, 0.1059, 0.1490);
+    const vec3  cPeak       = vec3(0.7333, 0.6039, 0.9686);
+
+    /* Halftone tuning. */
+    const float DOT_DENSITY = 70.0;     // dots per unit in warped-coord space
+    const float DOT_BASE    = 0.16;     // base dot radius
+    const float DOT_GROW    = 0.10;     // additional radius from height
 
     void main() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
       vec2 p = (vUv - 0.5) * aspect;
 
-      /* Mouse ripple wake. */
+      /* Mouse ripple wake (snappy v0.2 settle). */
       vec2 mp = (uMouse - 0.5) * aspect;
       vec2 toM = p - mp;
       float d = length(toM);
       vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
 
-      /* v0.2 flow speed — 0.10 (snappier than the heavy v0.4-0.10 era's 0.04). */
-      float t = uTime * 0.10;
+      /* Domain-warped fbm — same height field as v0.11. */
+      float t = uTime * 0.08;
       vec2 q = p * 1.6 + ripple;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
         fbm(q + vec2(0.0,       t * 0.8  ))
       );
       vec2 q2 = q + warp * 0.55;
-      float v = fbm(q2 + vec2(t * 0.5));
+      float h = fbm(q2 + vec2(t * 0.5));
+      h = h * 0.5 + 0.5;                      // [0, 1]
 
-      /* v0.2 contrast curve: gradient peaks, not crushed. */
-      v = v * 0.5 + 0.5;
-      v = smoothstep(0.55, 0.92, v);
-      v = pow(v, 0.85);
+      /* Pseudo-perspective: dots slightly larger in the lower viewport,
+         smaller toward the top. Fakes a 3D point-cloud foreshortening
+         without doing actual 3D. */
+      float depth = mix(1.15, 0.85, vUv.y);
 
-      vec3 col = mix(cValley, cPeak, v);
+      /* Halftone grid in the WARPED coordinate.
+         Because we sample fract() on q2 (which has the domain warp baked in),
+         the dot grid bends and swirls along the wave contours, exactly the
+         topographical look from the reference. */
+      vec2 dotCoord = q2 * DOT_DENSITY;
+      vec2 dotCell  = fract(dotCoord) - 0.5;
+      float dotDist = length(dotCell);
+
+      /* Dot radius: mild height modulation + perspective scale. */
+      float dotRadius = (DOT_BASE + h * DOT_GROW) * depth;
+      float dotMask   = 1.0 - smoothstep(dotRadius - 0.04, dotRadius + 0.04, dotDist);
+
+      /* Color the dot by height: dim slate-tinted in valleys, full lavender on peaks.
+         Smoothstep on h biases the contrast curve so peaks pop more. */
+      float colT     = smoothstep(0.20, 0.85, h);
+      vec3  dotColor = mix(cValley * 0.85, cPeak, colT);
+
+      /* Inside dot region: dotColor. Outside: pure slate (the gaps between dots). */
+      vec3 col = mix(cValley, dotColor, dotMask);
+
+      /* Edge vignette in aspect-corrected space — soft fade into slate at corners.
+         Pattern stays full-strength across most of the viewport, fades out
+         in the outer 25–30%. */
+      float vR   = length(p);
+      float edge = 1.0 - smoothstep(0.60, 1.15, vR);
+      col = mix(cValley, col, edge);
+
       gl_FragColor = vec4(col, 1.0);
     }
   `;
@@ -156,7 +184,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);
 
-  /* -------- Post-processing: subtle bloom on lavender peaks -------- */
+  /* -------- Subtle bloom on the brightest dots --------
+     Dropped strength from 0.30 (v0.11) to 0.15 — enough to feel
+     atmospheric without blurring the halftone pattern out. */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(window.innerWidth, window.innerHeight);
@@ -165,9 +195,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.30,    // strength    — moderate
-    0.60,    // radius
-    0.35     // threshold   — only lavender peaks bloom; slate bg is below
+    0.15,    // strength
+    0.55,    // radius
+    0.40     // threshold — only the brightest dots bloom
   );
   composer.addPass(bloomPass);
 
@@ -190,10 +220,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
   });
 
-  /* v0.2 settings restored — snappy, not the heavy v0.4-0.10 era. */
-  const TAU        = 0.60;   // wake settle (~1.5s)
-  const FOLLOW     = 0.12;   // mouse smoothing
-  const ENERGY_K   = 25.0;   // speed -> energy
+  const TAU        = 0.60;
+  const FOLLOW     = 0.12;
+  const ENERGY_K   = 25.0;
   const ENERGY_MAX = 1.5;
 
   let lastT = 0;
@@ -224,5 +253,5 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.11 — Slate & Lavender reset · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.12 — halftone topology mesh · Three.js", THREE.REVISION);
 })();
