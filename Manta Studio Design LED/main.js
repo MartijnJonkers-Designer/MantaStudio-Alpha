@@ -1,22 +1,21 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.12 (Halftone topology mesh)
+   AUROS — Liquid Engine v0.13 (3D point cloud topology)
 
-   Same fbm liquid math as v0.11 underneath, but rendered as a
-   halftone dot pattern instead of a smooth gradient. The dot grid
-   is sampled in the SAME domain-warped coordinates as the height
-   field, so dot rows visibly bend along the wave contours and
-   swirl around the mouse-driven ripple — matching the topographical
-   "point mesh" look of the reference image.
+   Architectural shift: OrthographicCamera + full-screen quad ->
+   PerspectiveCamera + THREE.Points with 108,000 vertices in a
+   BufferGeometry grid. The fbm + ripple math now lives in the
+   VERTEX shader, displacing each point's Y axis to create real
+   3D peaks and valleys.
 
-   Pipeline:
-     ShaderMaterial -> RenderPass -> UnrealBloomPass (subtle) -> OutputPass
+   - 360 x 300 grid (108,000 points), 4.8 x 4.0 world units
+   - Camera at (0, 1.0, 1.5), look at (0, 0, -0.5) — tilted ~27° down
+   - Mouse projected to the ground plane via Raycaster
+   - Sharp circular point discard (no anti-aliased blur)
+   - Specular fake: peaks favor upper-left light direction
+   - No post-processing — direct renderer.render() for max crispness
    ============================================================ */
 
 import * as THREE from "three";
-import { EffectComposer }    from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass }        from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass }   from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
@@ -25,10 +24,22 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     return;
   }
 
-  /* -------- Scene + camera + renderer -------- */
-  const scene = new THREE.Scene();
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const SLATE = 0x1A1B26;
 
+  /* -------- Scene + camera -------- */
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(SLATE);
+
+  const camera = new THREE.PerspectiveCamera(
+    55,
+    window.innerWidth / window.innerHeight,
+    0.05,
+    20
+  );
+  camera.position.set(0, 1.0, 1.5);
+  camera.lookAt(0, 0, -0.5);
+
+  /* -------- Renderer -------- */
   const renderer = new THREE.WebGLRenderer({
     canvas,
     alpha: false,
@@ -37,31 +48,49 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(0x1A1B26, 1);
+  renderer.setClearColor(SLATE, 1);
+
+  /* -------- Geometry: 108,000 points in a regular XZ grid --------
+     Y starts at 0 for every vertex; the vertex shader displaces Y
+     each frame. The grid extends 4.8 x 4.0 world units, which the
+     camera viewing-frustum compresses into a topographical horizon. */
+  const GRID_W = 360;        // points across X
+  const GRID_D = 300;        // points across Z
+  const GRID_X = 4.8;        // world units across X
+  const GRID_Z = 4.0;        // world units across Z
+  const TOTAL  = GRID_W * GRID_D;   // 108,000
+
+  const positions = new Float32Array(TOTAL * 3);
+  for (let i = 0; i < GRID_D; i++) {
+    for (let j = 0; j < GRID_W; j++) {
+      const idx = (i * GRID_W + j) * 3;
+      positions[idx + 0] = (j / (GRID_W - 1) - 0.5) * GRID_X;   // x
+      positions[idx + 1] = 0.0;                                  // y (will be displaced)
+      positions[idx + 2] = (i / (GRID_D - 1) - 0.5) * GRID_Z;   // z
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 
   /* -------- Uniforms -------- */
   const uniforms = {
-    uTime:       { value: 0 },
-    uMouse:      { value: new THREE.Vector2(0.5, 0.5) },
-    uDisplace:   { value: 0 },
-    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+    uTime:      { value: 0 },
+    uMouse:     { value: new THREE.Vector2(0, 0) },   // mouse projected to XZ ground plane
+    uDisplace:  { value: 0 },
+    uPointSize: { value: 5.5 },                        // base size; vertex scales by 1/depth
+    uHeight:    { value: 0.18 },                       // peak height in world units
   };
 
   /* -------- Shaders -------- */
   const vertexShader = /* glsl */ `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = vec4(position, 1.0);
-    }
-  `;
-
-  const fragmentShader = /* glsl */ `
     uniform float uTime;
     uniform vec2  uMouse;
     uniform float uDisplace;
-    uniform vec2  uResolution;
-    varying vec2  vUv;
+    uniform float uPointSize;
+    uniform float uHeight;
+
+    varying float vHeight;
+    varying vec2  vScreenUv;
 
     /* Stefan Gustavson 2D simplex noise (public domain). */
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -105,68 +134,71 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       return v;
     }
 
-    /* Palette.
-       cValley = #1A1B26 (slate)  cPeak = #BB9AF7 (soft lavender) */
-    const vec3  cValley     = vec3(0.1020, 0.1059, 0.1490);
-    const vec3  cPeak       = vec3(0.7333, 0.6039, 0.9686);
-
-    /* Halftone tuning. */
-    const float DOT_DENSITY = 70.0;     // dots per unit in warped-coord space
-    const float DOT_BASE    = 0.16;     // base dot radius
-    const float DOT_GROW    = 0.10;     // additional radius from height
-
     void main() {
-      vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
-      vec2 p = (vUv - 0.5) * aspect;
+      vec3 pos = position;
+      vec2 p2  = pos.xz;            // 2D point on the ground plane
 
-      /* Mouse ripple wake (snappy v0.2 settle). */
-      vec2 mp = (uMouse - 0.5) * aspect;
-      vec2 toM = p - mp;
-      float d = length(toM);
-      vec2 ripple = (toM / (d + 0.001)) * exp(-d * 2.5) * uDisplace * 0.20;
-
-      /* Domain-warped fbm — same height field as v0.11. */
+      /* Domain-warped fbm — same shape as v0.11/v0.12. */
       float t = uTime * 0.08;
-      vec2 q = p * 1.6 + ripple;
+      vec2 q = p2 * 1.6;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
         fbm(q + vec2(0.0,       t * 0.8  ))
       );
       vec2 q2 = q + warp * 0.55;
-      float h = fbm(q2 + vec2(t * 0.5));
-      h = h * 0.5 + 0.5;                      // [0, 1]
+      float h = fbm(q2 + vec2(t * 0.5));      // ~[-1, 1]
 
-      /* Pseudo-perspective: dots slightly larger in the lower viewport,
-         smaller toward the top. Fakes a 3D point-cloud foreshortening
-         without doing actual 3D. */
-      float depth = mix(1.15, 0.85, vUv.y);
+      /* Mouse ripple: bumps points up near the cursor's ground projection.
+         exp falloff with radius 2.5; uDisplace JS-side decays exponentially. */
+      vec2 toM   = p2 - uMouse;
+      float d    = length(toM);
+      float bump = exp(-d * 2.5) * uDisplace * 0.5;
+      h += bump;
 
-      /* Halftone grid in the WARPED coordinate.
-         Because we sample fract() on q2 (which has the domain warp baked in),
-         the dot grid bends and swirls along the wave contours, exactly the
-         topographical look from the reference. */
-      vec2 dotCoord = q2 * DOT_DENSITY;
-      vec2 dotCell  = fract(dotCoord) - 0.5;
-      float dotDist = length(dotCell);
+      /* Apply height to Y axis. */
+      pos.y = h * uHeight;
 
-      /* Dot radius: mild height modulation + perspective scale. */
-      float dotRadius = (DOT_BASE + h * DOT_GROW) * depth;
-      float dotMask   = 1.0 - smoothstep(dotRadius - 0.04, dotRadius + 0.04, dotDist);
+      /* Standard MVP. */
+      vec4 mvPos     = modelViewMatrix * vec4(pos, 1.0);
+      gl_Position    = projectionMatrix * mvPos;
 
-      /* Color the dot by height: dim slate-tinted in valleys, full lavender on peaks.
-         Smoothstep on h biases the contrast curve so peaks pop more. */
-      float colT     = smoothstep(0.20, 0.85, h);
-      vec3  dotColor = mix(cValley * 0.85, cPeak, colT);
+      /* Perspective-aware point size: distant points smaller, close points
+         larger. Min 1px so they never disappear. */
+      gl_PointSize = max(uPointSize / -mvPos.z, 1.0);
 
-      /* Inside dot region: dotColor. Outside: pure slate (the gaps between dots). */
-      vec3 col = mix(cValley, dotColor, dotMask);
+      /* Pass to fragment. */
+      vHeight   = h * 0.5 + 0.5;                                // [0, 1]
+      vScreenUv = (gl_Position.xy / gl_Position.w) * 0.5 + 0.5; // 0..1 screen UV
+    }
+  `;
 
-      /* Edge vignette in aspect-corrected space — soft fade into slate at corners.
-         Pattern stays full-strength across most of the viewport, fades out
-         in the outer 25–30%. */
-      float vR   = length(p);
-      float edge = 1.0 - smoothstep(0.60, 1.15, vR);
-      col = mix(cValley, col, edge);
+  const fragmentShader = /* glsl */ `
+    varying float vHeight;
+    varying vec2  vScreenUv;
+
+    /* Palette.
+       cValley = #1A1B26 (slate)
+       cPeak   = #BB9AF7 (soft lavender) */
+    const vec3 cValley = vec3(0.1020, 0.1059, 0.1490);
+    const vec3 cPeak   = vec3(0.7333, 0.6039, 0.9686);
+
+    void main() {
+      /* Sharp circular point — no AA blur. */
+      vec2 cc = gl_PointCoord - 0.5;
+      float r2 = dot(cc, cc);
+      if (r2 > 0.25) discard;
+
+      /* Color by height. */
+      vec3 col = mix(cValley, cPeak, smoothstep(0.20, 0.85, vHeight));
+
+      /* Specular fake: peaks favoring upper-left light direction.
+         Compute screen-space alignment with light vector (-1, +1) (top-left),
+         clamp to [0, 1], multiply by height, sharpen with pow, tint cool. */
+      vec2 toLight   = vec2(-1.0, 1.0);
+      float align    = dot(normalize(toLight), (vScreenUv - 0.5) * 2.0);
+      align          = clamp(align * 0.5 + 0.5, 0.0, 1.0);
+      float spec     = pow(vHeight * align, 4.0) * 0.7;
+      col           += spec * vec3(0.55, 0.55, 0.65);
 
       gl_FragColor = vec4(col, 1.0);
     }
@@ -176,50 +208,45 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     vertexShader,
     fragmentShader,
     uniforms,
-    depthTest:  false,
-    depthWrite: false,
+    transparent: false,
+    depthTest:   true,
+    depthWrite:  true,
   });
 
-  const geometry = new THREE.PlaneGeometry(2, 2);
-  const mesh = new THREE.Mesh(geometry, material);
-  scene.add(mesh);
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
 
-  /* -------- Subtle bloom on the brightest dots --------
-     Dropped strength from 0.30 (v0.11) to 0.15 — enough to feel
-     atmospheric without blurring the halftone pattern out. */
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(renderer.getPixelRatio());
-  composer.setSize(window.innerWidth, window.innerHeight);
+  /* -------- Mouse: raycast NDC -> ground plane (y=0) --------
+     The cursor's screen position projects to a point on the y=0 plane in
+     world space. That XZ position drives the ripple origin in the vertex
+     shader. */
+  const raycaster   = new THREE.Raycaster();
+  const ndcMouse    = new THREE.Vector2();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const hitPoint    = new THREE.Vector3();
 
-  composer.addPass(new RenderPass(scene, camera));
-
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.15,    // strength
-    0.55,    // radius
-    0.40     // threshold — only the brightest dots bloom
-  );
-  composer.addPass(bloomPass);
-
-  composer.addPass(new OutputPass());
-
-  /* -------- Mouse tracking — v0.2 snappy viscosity -------- */
-  const mouseTarget = { x: 0.5, y: 0.5 };
-  const mouseSmooth = { x: 0.5, y: 0.5 };
-  const mousePrev   = { x: 0.5, y: 0.5 };
+  let mouseTargetX = 0, mouseTargetZ = 0;
+  let mouseSmoothX = 0, mouseSmoothZ = 0;
+  let mousePrevX   = 0, mousePrevZ   = 0;
   let displaceEnergy = 0;
 
   window.addEventListener("pointermove", (e) => {
-    mouseTarget.x = e.clientX / window.innerWidth;
-    mouseTarget.y = 1.0 - e.clientY / window.innerHeight;
+    ndcMouse.x =  (e.clientX / window.innerWidth)  * 2 - 1;
+    ndcMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(ndcMouse, camera);
+    if (raycaster.ray.intersectPlane(groundPlane, hitPoint)) {
+      mouseTargetX = hitPoint.x;
+      mouseTargetZ = hitPoint.z;
+    }
   }, { passive: true });
 
   window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight, false);
-    composer.setSize(window.innerWidth, window.innerHeight);
-    uniforms.uResolution.value.set(window.innerWidth, window.innerHeight);
   });
 
+  /* -------- Tick — v0.2 snappy viscosity -------- */
   const TAU        = 0.60;
   const FOLLOW     = 0.12;
   const ENERGY_K   = 25.0;
@@ -231,27 +258,28 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     const dt   = lastT === 0 ? 0.016 : Math.min((tMs - lastT) * 0.001, 0.05);
     lastT = tMs;
 
-    mouseSmooth.x += (mouseTarget.x - mouseSmooth.x) * FOLLOW;
-    mouseSmooth.y += (mouseTarget.y - mouseSmooth.y) * FOLLOW;
+    mouseSmoothX += (mouseTargetX - mouseSmoothX) * FOLLOW;
+    mouseSmoothZ += (mouseTargetZ - mouseSmoothZ) * FOLLOW;
 
-    const dx = mouseTarget.x - mousePrev.x;
-    const dy = mouseTarget.y - mousePrev.y;
-    const speed = Math.sqrt(dx * dx + dy * dy);
+    const dx = mouseTargetX - mousePrevX;
+    const dz = mouseTargetZ - mousePrevZ;
+    const speed = Math.sqrt(dx * dx + dz * dz);
     displaceEnergy = Math.min(displaceEnergy + speed * ENERGY_K, ENERGY_MAX);
     displaceEnergy *= Math.exp(-dt / TAU);
 
-    mousePrev.x = mouseTarget.x;
-    mousePrev.y = mouseTarget.y;
+    mousePrevX = mouseTargetX;
+    mousePrevZ = mouseTargetZ;
 
     uniforms.uTime.value     = tSec;
-    uniforms.uMouse.value.set(mouseSmooth.x, mouseSmooth.y);
+    uniforms.uMouse.value.set(mouseSmoothX, mouseSmoothZ);
     uniforms.uDisplace.value = displaceEnergy;
 
-    composer.render();
+    renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.12 — halftone topology mesh · Three.js", THREE.REVISION);
+  console.log("[Auros] Liquid Engine v0.13 — 3D point cloud topology · Three.js", THREE.REVISION,
+              "·", TOTAL.toLocaleString(), "points");
 })();
