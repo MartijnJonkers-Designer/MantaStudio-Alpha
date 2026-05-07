@@ -230,21 +230,22 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
         }
       });
 
-      // 2. Auto-fit: center at origin, scale longest axis to 3 units.
+      // 2. Auto-fit: center at origin, scale longest axis to 2 units.
+      // v1.10 — was 3.0; manta exceeded camera frame width (~2.5u at FOV 38°
+      // from distance 3.67), eating the BG. 2.0 leaves ~25% margin.
       const bbox = new THREE.Box3().setFromObject(manta);
       const size = bbox.getSize(new THREE.Vector3());
       const center = bbox.getCenter(new THREE.Vector3());
       const longest = Math.max(size.x, size.y, size.z);
-      const scale = 3.0 / longest;
+      const scale = 2.0 / longest;
       manta.position.sub(center.multiplyScalar(scale));
       manta.scale.setScalar(scale);
 
-      // v1.9 — head moved from ~10 o'clock (v1.8) to ~7 o'clock (target).
-      // Additional 90° clockwise rotation: -PI/5 -> -7*PI/10 (-126°).
-      // If still off, the dial is rotation.y — adjust by clock-positions
-      // (each hour ≈ +/- PI/6 = 30°).
-      manta.rotation.y = -7 * Math.PI / 10;   // ~-126°, head at ~7 o'clock
-      manta.rotation.x = -0.05;               // v1.9 — was -0.15; more horizontal
+      // v1.10 — head moved from 1-2 o'clock (v1.9 was 180° wrong) to ~7-8.
+      // Sign flipped: -7*PI/10 -> +3*PI/10 (equivalent rotation, opposite hemisphere).
+      // If still off, dial is rotation.y — each clock hour ≈ +/- PI/6 (30°).
+      manta.rotation.y = 3 * Math.PI / 10;    // ~+54°, head at ~7-8 o'clock
+      manta.rotation.x = -0.05;               // slight nose-down tip
 
       // 3. Animation mixer (if any clips).
       if (gltf.animations && gltf.animations.length > 0) {
@@ -377,5 +378,5 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     });
   }
 
-  console.log("[Auros] v1.9 — Alignment pass 2 (more rotation, deeper cyan, ice cracks) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.10 — Alignment pass 3 (rotation flip + smaller manta) · Three.js", THREE.REVISION);
 })();
