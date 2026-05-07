@@ -1,16 +1,16 @@
 /* ============================================================
-   AUROS — Ethereal Ice v0.28 (Pro Max tuning)
+   AUROS — Ethereal Ice v0.29 (Diamond-Cut polish)
 
-   User-supplied tuning pass:
-     - White bg #FFFFFF, camera pulled in to z=4.0
-     - Wider/sharper manta (wings ±1.6, nose 0.6, tail -0.9)
-     - Heavier extrusion: depth 0.05, bevelThickness 0.20, 16 segments
-     - Stronger refraction: thickness 2.5, ior 1.52, envMapIntensity 5.0
-     - Slight metalness 0.1 for highlight catch
-     - Drama lighting: KeyLight 7.0 + SpotLight rim 10.0
-     - Brighter pulse (peak * 1.5) with sharper decay (exp(-phase*8))
-   AmbientLight + fillLight + inner PointLight removed per user spec.
-   Magnetic CTA block preserved from v0.27.
+   v0.28 base + final lighting/material refinements:
+     - metalness 0.1 -> 0.0 (was muddying glass)
+     - roughness  0.01 -> 0.0 (true mirror finish)
+     - attenuationDistance 0.4 -> 0.25 (deeper concentrated blue)
+     - keyLight 7.0 -> 4.0 (less blown out)
+     - exposure 1.2 -> 1.1
+     - AmbientLight(0xFFFFFF, 0.3) restored
+     - rimLight.target set + added to scene (now actually hits manta)
+     - inner PointLight(0x00FFFF, 2.0, 3, 2) restored as child of manta
+     - pulse peak * 1.5 -> * 1.0 (less harsh)
    ============================================================ */
 
 import * as THREE from "three";
@@ -35,7 +35,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2; // Brighter exposure for "glints"
+  renderer.toneMappingExposure = 1.1; // v0.29 — was 1.2 (slightly tamed)
 
   // FIX: PRO MAX ENVIRONMENT
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -63,16 +63,16 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
   geometry.center();
 
-  // MATERIAL: THE CRYSTAL MONOLITH
+  // MATERIAL: THE CRYSTAL MONOLITH (v0.29 diamond-cut polish)
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    metalness: 0.1, // Added slight metalness to catch highlights
-    roughness: 0.01,
+    metalness: 0.0,                    // v0.29 — was 0.1 (was muddying glass)
+    roughness: 0.0,                    // v0.29 — was 0.01 (true mirror finish)
     transmission: 1.0,
     ior: 1.52,
-    thickness: 2.5, // Increased for that "Deep Ice" look
-    envMapIntensity: 5.0, // FORCED SPARKLE
-    attenuationDistance: 0.4,
+    thickness: 2.5,
+    envMapIntensity: 5.0,
+    attenuationDistance: 0.25,         // v0.29 — was 0.4 (deeper, more concentrated blue)
     attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
     emissive: new THREE.Color(ARCTIC_BLUE),
@@ -84,13 +84,22 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   manta.rotation.x = -0.2;
   scene.add(manta);
 
-  // LIGHTING: THE "DIAMOND" SETUP
-  const keyLight = new THREE.DirectionalLight(0xFFFFFF, 7.0); // Overdrive
+  // INNER GLOW (v0.29): cyan PointLight inside the wing — glows from
+  // within even when the pulse is off. (color, intensity, distance, decay)
+  const innerLight = new THREE.PointLight(0x00FFFF, 2.0, 3, 2);
+  manta.add(innerLight);
+
+  // LIGHTING: THE "DIAMOND" SETUP (v0.29 diamond-cut polish)
+  scene.add(new THREE.AmbientLight(0xFFFFFF, 0.3));   // v0.29 — restored
+
+  const keyLight = new THREE.DirectionalLight(0xFFFFFF, 4.0);   // v0.29 — was 7.0
   keyLight.position.set(1, 3, 2);
   scene.add(keyLight);
 
   const rimLight = new THREE.SpotLight(0xFFFFFF, 10.0);
-  rimLight.position.set(-2, 2, -2); // Backlight to catch the edges
+  rimLight.position.set(-2, 2, -2);                   // backlight from upper-back-left
+  rimLight.target.position.set(0, 0, 0);              // v0.29 — actually points at manta
+  scene.add(rimLight.target);                         // target must be in scene
   scene.add(rimLight);
 
   /* -------- Tick loop -------- */
@@ -102,7 +111,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     // Pulse Logic
     const phase = (tSec % 4.0) / 4.0;
     const peak = Math.exp(-phase * 8.0);
-    mantaMaterial.emissiveIntensity = peak * 1.5; // Brighter glow
+    mantaMaterial.emissiveIntensity = peak * 1.0; // v0.29 — was 1.5 (less harsh)
 
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
@@ -149,5 +158,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.28 — Pro Max tuning · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.29 — Diamond-Cut polish · Three.js", THREE.REVISION);
 })();
