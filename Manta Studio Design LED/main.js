@@ -193,10 +193,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     emissive: new THREE.Color(ARCTIC_BLUE),
     emissiveIntensity: 0.0,
 
-    // v1.0 — body bulge
+    // v1.1 — body bulge (was scale 0.8 / bias -0.4: mesh self-inverted because
+    // edge UVs computed to -0.4 along normal on a 0.05-thick extrude, folding
+    // front and back faces through each other). Bias 0 ensures only outward push.
     displacementMap: displacementMap,
-    displacementScale: 0.8,
-    displacementBias: -0.4,           // recenter so bulge pushes both ways
+    displacementScale: 0.25,
+    displacementBias: 0.0,
 
     // v1.0 — internal fractures
     normalMap: fractureNormal,
@@ -278,11 +280,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   composer.addPass(new RenderPass(scene, camera));
 
+  // v1.1 — threshold raised from 0.1 to 1.05. On a white background (luminance 1.0),
+  // threshold 0.1 made the entire frame exceed threshold, so bloom blurred everything
+  // into white-on-white slop and the transmissive manta vanished. Threshold must be
+  // ABOVE white BG luminance — only the HDR-bright emissive pulse (now peak 3.0) blooms.
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    2.0,   // strength — bleeds the cyan pulse into the white
-    0.5,   // radius
-    0.1    // threshold
+    2.0,   // strength (per spec)
+    0.5,   // radius   (per spec)
+    1.05   // threshold (was 0.1 — see comment above)
   );
   composer.addPass(bloomPass);
 
@@ -296,10 +302,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     manta.rotation.y = Math.sin(tSec * 0.1) * 0.15;
     manta.position.y = Math.sin(tSec * 0.15) * 0.05;
 
-    // Pulse — exponential falloff every 4 seconds.
+    // Pulse — exponential falloff every 4 seconds. v1.1: peak * 3.0 (was 1.0).
+    // Peak must exceed bloom threshold (1.05) AND exceed white BG luminance to
+    // bloom selectively. With ACES tone mapping the peak compresses to a clean
+    // cyan flash rather than blowing out to white.
     const phase = (tSec % 4.0) / 4.0;
     const peak = Math.exp(-phase * 8.0);
-    mantaMaterial.emissiveIntensity = peak * 1.0;
+    mantaMaterial.emissiveIntensity = peak * 3.0;
 
     composer.render();
     requestAnimationFrame(tick);
@@ -349,5 +358,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.0 — Cinematic (bloom + displacement + fractures + floor) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.1 — Cinematic fix (bloom threshold, displacement bias) · Three.js", THREE.REVISION);
 })();
