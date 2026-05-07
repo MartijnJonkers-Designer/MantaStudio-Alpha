@@ -124,30 +124,59 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     const c = document.createElement("canvas");
     c.width = c.height = size;
     const ctx = c.getContext("2d");
+
+    // Subtle base noise (less than v1.8)
     const img = ctx.createImageData(size, size);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
-      const nx = 128 + (Math.random() - 0.5) * 30;
-      const ny = 128 + (Math.random() - 0.5) * 30;
+      const nx = 128 + (Math.random() - 0.5) * 12;
+      const ny = 128 + (Math.random() - 0.5) * 12;
       d[i] = nx; d[i+1] = ny; d[i+2] = 255; d[i+3] = 255;
     }
     ctx.putImageData(img, 0, 0);
+
+    // Long, mostly-straight ice fractures with strong off-axis normals.
+    // alpha 0.95 (was 0.50), width 2-5 (was 1-2.5).
     ctx.lineCap = "round";
-    for (let i = 0; i < 40; i++) {
-      const r = 80 + Math.random() * 80;
-      const g = 80 + Math.random() * 80;
-      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.50)`;
-      ctx.lineWidth = 1 + Math.random() * 1.5;
+    for (let i = 0; i < 30; i++) {
+      const r = 30 + Math.random() * 80;
+      const g = 30 + Math.random() * 80;
+      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.95)`;
+      ctx.lineWidth = 2 + Math.random() * 3;
+
+      const x0 = Math.random() * size;
+      const y0 = Math.random() * size;
+      const angle = Math.random() * Math.PI * 2;
+      const length = 250 + Math.random() * 500;
+      const x1 = x0 + Math.cos(angle) * length;
+      const y1 = y0 + Math.sin(angle) * length;
+
+      // Slight curvature via bezier control points along the angle.
+      const cx1 = x0 + Math.cos(angle) * length * 0.33 + (Math.random() - 0.5) * 80;
+      const cy1 = y0 + Math.sin(angle) * length * 0.33 + (Math.random() - 0.5) * 80;
+      const cx2 = x0 + Math.cos(angle) * length * 0.66 + (Math.random() - 0.5) * 80;
+      const cy2 = y0 + Math.sin(angle) * length * 0.66 + (Math.random() - 0.5) * 80;
+
       ctx.beginPath();
-      const x0 = Math.random() * size, y0 = Math.random() * size;
       ctx.moveTo(x0, y0);
-      ctx.bezierCurveTo(
-        x0 + (Math.random() - 0.5) * 250, y0 + (Math.random() - 0.5) * 250,
-        x0 + (Math.random() - 0.5) * 250, y0 + (Math.random() - 0.5) * 250,
-        x0 + (Math.random() - 0.5) * 350, y0 + (Math.random() - 0.5) * 350
-      );
+      ctx.bezierCurveTo(cx1, cy1, cx2, cy2, x1, y1);
       ctx.stroke();
+
+      // 50% chance: a branching crack
+      if (Math.random() > 0.5) {
+        const t = 0.3 + Math.random() * 0.4;
+        const bx = x0 + (x1 - x0) * t;
+        const by = y0 + (y1 - y0) * t;
+        const bAng = angle + (Math.random() - 0.5) * 1.6;
+        const bLen = length * (0.25 + Math.random() * 0.2);
+        ctx.lineWidth = 1.5 + Math.random() * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + Math.cos(bAng) * bLen, by + Math.sin(bAng) * bLen);
+        ctx.stroke();
+      }
     }
+
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.NoColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -169,12 +198,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     ior: 1.52,
     thickness: 1.2,
     envMapIntensity: 3.0,
-    attenuationDistance: 0.30,        // v1.8 — was 0.55; deeper cyan saturation
+    attenuationDistance: 0.18,        // v1.9 — was 0.30; even deeper cyan
     attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
     side: THREE.DoubleSide,
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(0.65, 0.65)   // v1.8 — was 0.35; punchier cracks
+    normalScale: new THREE.Vector2(1.0, 1.0)     // v1.9 — was 0.65; cracks pop
   });
 
   /* ============================================================
@@ -210,11 +239,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
       manta.position.sub(center.multiplyScalar(scale));
       manta.scale.setScalar(scale);
 
-      // v1.8 — diagonal orientation to match reference
-      // (head toward lower-left, tail toward upper-right of frame).
-      // If the manta ends up facing the wrong way, flip the sign of rotation.y.
-      manta.rotation.y = -Math.PI / 5;   // ~-36° around vertical axis
-      manta.rotation.x = -0.15;          // slight nose-down tip
+      // v1.9 — head moved from ~10 o'clock (v1.8) to ~7 o'clock (target).
+      // Additional 90° clockwise rotation: -PI/5 -> -7*PI/10 (-126°).
+      // If still off, the dial is rotation.y — adjust by clock-positions
+      // (each hour ≈ +/- PI/6 = 30°).
+      manta.rotation.y = -7 * Math.PI / 10;   // ~-126°, head at ~7 o'clock
+      manta.rotation.x = -0.05;               // v1.9 — was -0.15; more horizontal
 
       // 3. Animation mixer (if any clips).
       if (gltf.animations && gltf.animations.length > 0) {
@@ -347,5 +377,5 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     });
   }
 
-  console.log("[Auros] v1.8 — Alignment pass 1 (rotation, cyan, cracks) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.9 — Alignment pass 2 (more rotation, deeper cyan, ice cracks) · Three.js", THREE.REVISION);
 })();
