@@ -1,17 +1,16 @@
 /* ============================================================
-   AUROS — Ethereal Ice (v0.27)
+   AUROS — Ethereal Ice v0.28 (Pro Max tuning)
 
-   Pivots the geometry from v0.20's TorusKnot back to an extruded
-   manta-wing silhouette — a 10-point aerodynamic chevron Shape with
-   heavy bevel. Material, env map, inner glow, pulse, HUDs, magnetic
-   CTA all preserved from v0.20.
-
-   - 10-point Shape pre-bevel ~0.8 x 0.7 units
-   - ExtrudeGeometry with depth 0.10, bevelSize 0.50, bevelThickness 0.50
-     (per brief — heavy bevel rounds the slab into a faceted gemstone)
-   - 8 bevel segments for smooth large-bevel curves
-   - MeshPhysicalMaterial unchanged: transmission 1.0, thickness 5.0,
-     roughness 0.05, ior 1.5
+   User-supplied tuning pass:
+     - White bg #FFFFFF, camera pulled in to z=4.0
+     - Wider/sharper manta (wings ±1.6, nose 0.6, tail -0.9)
+     - Heavier extrusion: depth 0.05, bevelThickness 0.20, 16 segments
+     - Stronger refraction: thickness 2.5, ior 1.52, envMapIntensity 5.0
+     - Slight metalness 0.1 for highlight catch
+     - Drama lighting: KeyLight 7.0 + SpotLight rim 10.0
+     - Brighter pulse (peak * 1.5) with sharper decay (exp(-phase*8))
+   AmbientLight + fillLight + inner PointLight removed per user spec.
+   Magnetic CTA block preserved from v0.27.
    ============================================================ */
 
 import * as THREE from "three";
@@ -19,152 +18,105 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
-  if (!canvas) {
-    console.error("[Auros] No #auros-canvas element found.");
-    return;
-  }
+  if (!canvas) return;
 
-  const BG_COLOR    = 0xF0F0F0;     // v0.26 — slightly darker grey for ice contrast
+  // PRO MAX COLORS
+  const BG_COLOR = 0xFFFFFF; // Pure white background for high-end feel
   const ARCTIC_BLUE = 0x00FFFF;
 
-  /* -------- Scene + camera -------- */
-  const scene  = new THREE.Scene();
+  const scene = new THREE.Scene();
   scene.background = new THREE.Color(BG_COLOR);
 
-  const camera = new THREE.PerspectiveCamera(
-    45,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    50
-  );
-  camera.position.set(0, 0, 5.0);          // wings span ~75% of screen at FOV 45
-  camera.lookAt(0, 0, 0);
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50);
+  camera.position.set(0, 0, 4.0); // Moved closer for impact
+  camera.lookAt(0, 0, 0);          // explicit — safe with new camera position
 
-  /* -------- Renderer (per brief: antialias true, pixelRatio capped at 2) -------- */
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true,
-    alpha: true,                       // v0.26 brief — alpha is a constructor option
-    powerPreference: "high-performance",
-  });
-  /* NB: outputEncoding = sRGBEncoding was removed in Three.js r152.
-     The default outputColorSpace = SRGBColorSpace already handles sRGB
-     output, so the v0.26 brief's directive is effectively already in
-     place — no explicit line needed. */
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(BG_COLOR, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 1.2; // Brighter exposure for "glints"
 
-  /* -------- Environment map for transmission/refraction --------
-     RoomEnvironment is a small procedural studio scene that PMREM
-     bakes into a cubemap. Without an env, transmission has nothing
-     to refract through and the ice looks flat-tinted. */
+  // FIX: PRO MAX ENVIRONMENT
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const envScene = new RoomEnvironment();
+  // Cranked the intensity of the environment generation
+  scene.environment = pmrem.fromScene(envScene, 0.0).texture;
 
-  /* -------- Geometry: v0.25 vertex map (sharper sweep, larger crystal bevel) --------
-     Pre-bevel bbox: 2.8 x 1.2 (X: -1.4..+1.4, Y: -0.8..+0.4).
-     Bevel 0.10 with 12 segments — small relative to width (3.6%) but
-     well-sampled so the bevel curve reads smooth, not faceted.
-     bevelThickness 0.15 vs depth 0.02 = bevel dominates Z; the slab
-     reads as a lens-cross-section crystal. */
+  // GEOMETRY: THE STEALTH MANTA (Fixed Coordinates)
   const shape = new THREE.Shape();
-  shape.moveTo(0, 0.4);                                       // Nose
-  shape.bezierCurveTo( 0.15,  0.4,   0.4,  0.1,   1.4,  0);   // Swept right wing tip
-  shape.bezierCurveTo( 0.4,  -0.2,   0.1, -0.3,   0.05, -0.8);// Trailing edge to tail
-  shape.lineTo(-0.05, -0.8);                                  // Tail tip
-  shape.bezierCurveTo(-0.1, -0.3,  -0.4, -0.2,  -1.4,  0);    // Trailing edge to left wing tip
-  shape.bezierCurveTo(-0.4,  0.1,  -0.15, 0.4,   0,    0.4);  // Back to nose
+  shape.moveTo(0, 0.6); // Sharper Nose
+  shape.bezierCurveTo(0.2, 0.6, 0.5, 0.1, 1.6, 0); // Extended Wings
+  shape.bezierCurveTo(0.5, -0.2, 0.1, -0.3, 0.05, -0.9); // Tail
+  shape.lineTo(-0.05, -0.9);
+  shape.bezierCurveTo(-0.1, -0.3, -0.5, -0.2, -1.6, 0);
+  shape.bezierCurveTo(-0.5, 0.1, -0.2, 0.6, 0, 0.6);
 
   const extrudeSettings = {
-    depth:           0.02,
-    bevelEnabled:    true,
-    bevelThickness:  0.15,    // per v0.25 brief — crystal depth in Z
-    bevelSize:       0.10,    // per v0.25 brief — sharpens wingtips
-    bevelSegments:   12,      // per v0.25 brief — smooth, not blocky
-    curveSegments:   32,      // dense Bezier sampling
+    depth: 0.05,
+    bevelEnabled: true,
+    bevelThickness: 0.2, // Thicker bevel = more light bending
+    bevelSize: 0.1,
+    bevelSegments: 16,
+    curveSegments: 40
   };
   const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
   geometry.center();
-  /* No rotateX — geometry stays in XY plane facing the camera at z=5. */
 
+  // MATERIAL: THE CRYSTAL MONOLITH
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color:               0xFFFFFF,
-    metalness:           0.0,
-    transmission:        1.0,
-    thickness:           1.5,                              // v0.26 — was 2.0
-    roughness:           0.0,                              // v0.26 — was 0.02 (mirror smooth)
-    ior:                 1.5,
-    envMapIntensity:     3.0,
-    /* v0.26 attenuation: distance dropped to 0.5, color back to icy blue.
-       Light absorbed faster -> thick parts of the slab take on the blue
-       tint, thin edges stay clear. This is what makes 'ice look like ice'. */
-    attenuationDistance: 0.5,
-    attenuationColor:    new THREE.Color(0xC0E8FF),
-    transparent:         true,
-    opacity:             1.0,
-    emissive:            new THREE.Color(ARCTIC_BLUE),
-    emissiveIntensity:   0.0,         // animated by pulse
-    side:                THREE.DoubleSide,
+    color: 0xffffff,
+    metalness: 0.1, // Added slight metalness to catch highlights
+    roughness: 0.01,
+    transmission: 1.0,
+    ior: 1.52,
+    thickness: 2.5, // Increased for that "Deep Ice" look
+    envMapIntensity: 5.0, // FORCED SPARKLE
+    attenuationDistance: 0.4,
+    attenuationColor: new THREE.Color(0xC0E8FF),
+    transparent: true,
+    emissive: new THREE.Color(ARCTIC_BLUE),
+    emissiveIntensity: 0.0,
   });
 
   const manta = new THREE.Mesh(geometry, mantaMaterial);
-  /* No initial pitch tilt — head-on camera view is the point. */
+  // Slight tilt to catch the key light on the face
+  manta.rotation.x = -0.2;
   scene.add(manta);
 
-  /* -------- Inner glow PointLight --------
-     Child of the mesh so it follows rotation/position. Pale icy
-     blue, moderate intensity, range limited to within the knot. */
-  const innerLight = new THREE.PointLight(0xC0E8FF, 1.5, 2.5, 1.5);
-  innerLight.position.set(0, 0.05, 0);
-  manta.add(innerLight);
-
-  /* -------- Lights --------
-     Soft ambient + directional gives the ice subtle highlights even
-     where the env map is uniform. */
-  scene.add(new THREE.AmbientLight(0xFFFFFF, 0.4));
-
-  const keyLight = new THREE.DirectionalLight(0xFFFFFF, 5.0);   // v0.26 — was 1.2
-  keyLight.position.set(0.5, 2.5, 2.5);                          // front-top per brief
+  // LIGHTING: THE "DIAMOND" SETUP
+  const keyLight = new THREE.DirectionalLight(0xFFFFFF, 7.0); // Overdrive
+  keyLight.position.set(1, 3, 2);
   scene.add(keyLight);
 
-  const fillLight = new THREE.DirectionalLight(0xCCDDFF, 0.5);
-  fillLight.position.set(-1.5, 1.0, -1.0);
-  scene.add(fillLight);
+  const rimLight = new THREE.SpotLight(0xFFFFFF, 10.0);
+  rimLight.position.set(-2, 2, -2); // Backlight to catch the edges
+  scene.add(rimLight);
 
-  /* -------- Resize -------- */
-  window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-  });
-
-  /* -------- Tick: idle rock + cyan pulse -------- */
-  const PULSE_PERIOD = 4.0;           // seconds between pulses
+  /* -------- Tick loop -------- */
   function tick(tMs) {
     const tSec = tMs * 0.001;
+    manta.rotation.y = Math.sin(tSec * 0.1) * 0.15; // Slower, heavier
+    manta.position.y = Math.sin(tSec * 0.15) * 0.05;
 
-    // Idle rocking — slow yaw around vertical (silhouette stays visible
-    // since manta now lies in XY plane facing camera) + small bob.
-    manta.rotation.y = Math.sin(tSec * 0.15) * 0.20;
-    manta.rotation.x = Math.sin(tSec * 0.20) * 0.06;
-    manta.position.y = Math.sin(tSec * 0.20) * 0.04;
-
-    // Cyan pulse: phase 0..1 over PULSE_PERIOD, with a sharp peak
-    // near phase 0 that quickly decays. emissive set to arctic blue,
-    // intensity oscillates between 0 and ~0.4.
-    const phase = (tSec % PULSE_PERIOD) / PULSE_PERIOD;
-    const peak  = Math.exp(-phase * 6.0);   // sharp falling exponential
-    mantaMaterial.emissiveIntensity = peak * 0.40;
+    // Pulse Logic
+    const phase = (tSec % 4.0) / 4.0;
+    const peak = Math.exp(-phase * 8.0);
+    mantaMaterial.emissiveIntensity = peak * 1.5; // Brighter glow
 
     renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 
-  /* -------- Magnetic CTA button --------
+  // Resize + Magnetic CTA logic stays the same
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+  });
+
+  /* -------- Magnetic CTA (preserved from v0.27) --------
      When the cursor is within 100px of the button center, translate
      the button toward the cursor with strength scaling by proximity.
      Outside that radius, snap back to the centered base position. */
@@ -182,7 +134,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < RADIUS) {
-        const pull = 1.0 - dist / RADIUS;          // 0..1 (closer = stronger)
+        const pull = 1.0 - dist / RADIUS;
         const ox = dx * pull * STRENGTH;
         const oy = dy * pull * STRENGTH;
         cta.style.transform =
@@ -197,5 +149,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.27 — Ice Revival (live) · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.28 — Pro Max tuning · Three.js", THREE.REVISION);
 })();
