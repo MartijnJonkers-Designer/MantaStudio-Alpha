@@ -71,7 +71,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.75;     // v1.12 — was 1.0; dim global ~25%
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -207,14 +207,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     metalness: 0.0,
     roughness: 0.0,
     transmission: 1.0,
-    ior: 1.65,                                   // v1.11 — was 1.52; sharper refraction
-    thickness: 4.0,                              // v1.11 — was 1.2; much more cyan accumulation
-    envMapIntensity: 3.0,
-    attenuationDistance: 0.4,                    // v1.11 — was 0.18; relaxed because thickness is 3x
-    attenuationColor: new THREE.Color(0x70BFFF), // v1.11 — was 0xC0E8FF; deeper cyan-blue tint
+    ior: 1.65,
+    thickness: 4.0,
+    envMapIntensity: 1.5,                        // v1.12 — was 3.0; less white env reflected back
+    attenuationDistance: 0.4,
+    attenuationColor: new THREE.Color(0x70BFFF),
     transparent: true,
     side: THREE.DoubleSide,
-    clearcoat: 1.0,                              // v1.11 — added; glossy outer shell, crisper edges
+    clearcoat: 0.5,                              // v1.12 — was 1.0; less aggressive gloss
     clearcoatRoughness: 0.1,
     normalMap: fractureNormal,
     normalScale: new THREE.Vector2(1.0, 1.0)
@@ -353,9 +353,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.4,    // strength — subtle
+    0.15,   // v1.12 — was 0.4; bloom kisses, doesn't bleed
     0.6,    // radius
-    1.05    // threshold — above white BG luminance, only HDR highlights bloom
+    1.25    // v1.12 — was 1.05; way tighter, only the brightest pixels qualify
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -414,5 +414,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.11 — Material punchup + ripple saturation + selective bloom · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.12 — Global dim (exposure, envMap, bloom, clearcoat all down) · Three.js", THREE.REVISION);
 })();
