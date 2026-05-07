@@ -3,16 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#01050F" />
-  <title>Auros — MantaWorks</title>
-  <meta name="description" content="MantaWorks. Auros liquid engine." />
+  <meta name="theme-color" content="#F5F5F7" />
+  <title>MantaWorks — Ethereal Ice</title>
+  <meta name="description" content="MantaWorks. Ethereal Ice hero." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
 
   <link rel="stylesheet" href="Styles.css" />
 
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.170.0/build/three.module.js"
+      "three":         "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
     }
   }
   </script>
@@ -20,6 +28,15 @@
 <body>
 
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
+
+  <!-- HUD: four corner readouts in 10px Geist Mono, color #1C1C1E -->
+  <div class="hud hud--tl" aria-hidden="true">MANTAWORKS // REF: ALPHA_V4</div>
+  <div class="hud hud--tr" aria-hidden="true">SYSTEM_STATUS: NOMINAL</div>
+  <div class="hud hud--bl" aria-hidden="true">ENCRYPTION: ACTIVE</div>
+  <div class="hud hud--br" aria-hidden="true">COORDINATES: [24.52, 72.83]</div>
+
+  <!-- CTA: matte-black button bottom-center, magnetic mouse follow within 100px -->
+  <button class="cta" id="cta">REQUEST BRIEFING</button>
 
   <script type="module" src="main.js"></script>
 </body>
