@@ -169,12 +169,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     ior: 1.52,
     thickness: 1.2,
     envMapIntensity: 3.0,
-    attenuationDistance: 0.55,
+    attenuationDistance: 0.30,        // v1.8 — was 0.55; deeper cyan saturation
     attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
     side: THREE.DoubleSide,
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(0.35, 0.35)
+    normalScale: new THREE.Vector2(0.65, 0.65)   // v1.8 — was 0.35; punchier cracks
   });
 
   /* ============================================================
@@ -209,6 +209,12 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
       const scale = 3.0 / longest;
       manta.position.sub(center.multiplyScalar(scale));
       manta.scale.setScalar(scale);
+
+      // v1.8 — diagonal orientation to match reference
+      // (head toward lower-left, tail toward upper-right of frame).
+      // If the manta ends up facing the wrong way, flip the sign of rotation.y.
+      manta.rotation.y = -Math.PI / 5;   // ~-36° around vertical axis
+      manta.rotation.x = -0.15;          // slight nose-down tip
 
       // 3. Animation mixer (if any clips).
       if (gltf.animations && gltf.animations.length > 0) {
@@ -341,5 +347,5 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     });
   }
 
-  console.log("[Auros] v1.7 — GLTF manta · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.8 — Alignment pass 1 (rotation, cyan, cracks) · Three.js", THREE.REVISION);
 })();
