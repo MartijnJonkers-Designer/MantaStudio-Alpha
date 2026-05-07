@@ -266,8 +266,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // Uses the standard view-space varyings vNormal (declared by normal_pars_fragment)
   // and vViewPosition (declared by viewport_pars_fragment / set in vertex stage).
   const fresnelUniforms = {
-    fresnelPower:     { value: 2.5 },
-    fresnelIntensity: { value: 1.6 },
+    fresnelPower:     { value: 3.0 },   // v1.4 — was 2.5; sharper edge falloff, less rim area
+    fresnelIntensity: { value: 0.6 },   // v1.4 — was 1.6; rim is a hint, not a halo
     fresnelColor:     { value: new THREE.Color(0xFFFFFF) }
   };
   mantaMaterial.onBeforeCompile = (shader) => {
@@ -375,11 +375,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   composer.addPass(new RenderPass(scene, camera));
 
   // Selective bloom — only HDR pulse + Fresnel rim cross threshold 1.1.
+  // v1.4 — bloom dialed down. Strength 1.2 -> 0.5, threshold 1.1 -> 1.2.
+  // Combined with weaker Fresnel rim and lower pulse peak, the bloom is
+  // a soft glow accent rather than a glow blowout.
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.2,   // strength
+    0.5,   // strength  (was 1.2)
     0.5,   // radius
-    1.1    // threshold (v1.3 — was 1.0; tighter selection, no fog)
+    1.2    // threshold (was 1.1)
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -392,10 +395,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     manta.rotation.y = Math.sin(tSec * 0.1) * 0.15;
     manta.position.y = Math.sin(tSec * 0.15) * 0.05;
 
-    // Pulse — peak 3.0 (HDR, exceeds bloom threshold).
+    // Pulse — v1.4 peak * 1.8 (was 3.0). Still HDR enough to clear
+    // bloom threshold 1.2, but cyan flash is gentle, not blinding.
     const phase = (tSec % 4.0) / 4.0;
     const peak = Math.exp(-phase * 8.0);
-    mantaMaterial.emissiveIntensity = peak * 3.0;
+    mantaMaterial.emissiveIntensity = peak * 1.8;
 
     composer.render();
     requestAnimationFrame(tick);
@@ -445,5 +449,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.3 — Sleek Glacier Monolith (ripples + fresnel + pool) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.4 — Bloom dialed down · Three.js", THREE.REVISION);
 })();
