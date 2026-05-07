@@ -1,33 +1,29 @@
 /* ============================================================
-   AUROS — Cinematic v1.0 (post-processing, no compromises)
+   AUROS — Cinematic v1.3 (Sleek Glacier Monolith)
 
-   v0.29 was material-perfect but lacked atmospheric soul.
-   This is a ground-up rebuild around shaders + bloom.
+   Reference image: iridescent floor pool, cyan/lavender concentric
+   rings, bright-edged crystal manta with fractured surface, soft
+   off-white sky.
 
-   1. THE BODY (BULGE):
-      CanvasTexture radial gradient (white center -> black edge)
-      applied as displacementMap on the manta material.
-      displacementScale: 0.8 -> thick body, thin wings.
+   Changes vs v1.2:
+   1. Floor ripples — CanvasTexture, concentric cyan/lavender bands
+      drawn at HSL hue shifts. Floor transmission dropped 0.5 -> 0.2
+      so the rings actually read.
+   2. Manta surface — fractureNormal punched up (normalScale 1.4 -> 2.0)
+      so the ice cracks read as fractures, not plastic.
+   3. Fresnel — onBeforeCompile injects a fresnel term that adds white
+      light to totalEmissiveRadiance at glancing angles. Edges glow
+      bright white, center stays clear/refractive.
+   4. No more fog — bloom threshold 1.0 -> 1.1; scene.background is
+      now a 2x512 vertical CanvasTexture gradient (#FFFFFF -> #FAFAFA).
+   5. Top-down SpotLight — tight cone aimed at floor origin creates the
+      "pooling" effect on the ripples.
 
-   2. THE ATMOSPHERE (BLOOM):
-      EffectComposer + UnrealBloomPass.
-      strength 2.0, radius 0.5, threshold 0.1.
-      Arctic-blue pulse bleeds into the white space.
-
-   3. THE FLOOR (TARGET):
-      PlaneGeometry @ y = -2, MeshPhysicalMaterial
-      transmission 0.5, roughness 0.2.
-      Manta casts a shadow onto it.
-
-   4. INTERNAL FRACTURES:
-      Procedural noise CanvasTexture as normalMap with
-      bezier "crack" overlays. We see fractures, not glass.
-
-   5. LIGHTING:
-      Key light is a RectAreaLight (long rectangular highlights,
-      not round sun-dot). RectAreaLight cannot cast shadows in
-      three.js, so a low-intensity DirectionalLight handles
-      shadow projection only.
+   v0.29 -> v1.0: introduced bloom, displacement, floor, fractures,
+   RectAreaLight key.
+   v1.0 -> v1.1: fixed mesh self-inversion + bloom-against-white-BG fog.
+   v1.1 -> v1.2: grey-tinted manta + opacity 0.9 + tighter bloom.
+   v1.2 -> v1.3: glacier-monolith look (this file).
    ============================================================ */
 
 import * as THREE from "three";
@@ -42,14 +38,30 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   const canvas = document.getElementById("auros-canvas");
   if (!canvas) return;
 
-  // RectAreaLight needs its uniforms initialized once before use.
   RectAreaLightUniformsLib.init();
 
-  const BG_COLOR    = 0xFFFFFF;
   const ARCTIC_BLUE = 0x00FFFF;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(BG_COLOR);
+
+  /* ============================================================
+     SCENE BACKGROUND — soft gradient (#FFFFFF top -> #FAFAFA bottom)
+     ============================================================ */
+  function makeBackgroundGradient() {
+    const c = document.createElement("canvas");
+    c.width = 2;
+    c.height = 512;
+    const ctx = c.getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, 512);
+    grad.addColorStop(0.0, "#FFFFFF");
+    grad.addColorStop(1.0, "#FAFAFA");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 2, 512);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+  scene.background = makeBackgroundGradient();
 
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 50);
   camera.position.set(0, 0, 4.0);
@@ -59,7 +71,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.8;   // v1.2 — was 1.1; off-white BG so manta pops
+  renderer.toneMappingExposure = 0.8;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -72,15 +84,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      PROCEDURAL TEXTURES
      ============================================================ */
 
-  // 1. DISPLACEMENT MAP — radial white-to-black gradient
-  //    White (1.0) at center pushes outward = body bulge.
-  //    Black (0.0) at edges leaves the wings flat.
+  // 1. DISPLACEMENT MAP — radial white-to-black gradient, drives body bulge.
   function makeDisplacementTexture() {
     const size = 512;
     const c = document.createElement("canvas");
     c.width = c.height = size;
     const ctx = c.getContext("2d");
-
     const grad = ctx.createRadialGradient(
       size * 0.5, size * 0.5, 0,
       size * 0.5, size * 0.5, size * 0.5
@@ -90,28 +99,24 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     grad.addColorStop(1.0, "#000000");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, size, size);
-
     const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.NoColorSpace;   // displacement is data, not color
+    tex.colorSpace = THREE.NoColorSpace;
     return tex;
   }
 
-  // 2. NORMAL MAP — high-frequency noise + bezier "crack" lines
-  //    Around tangent-space neutral (128, 128, 255) so the surface
-  //    only deviates locally. Cracks are off-axis pushes that read
-  //    as fractures inside the ice.
+  // 2. NORMAL MAP — high-frequency noise + bezier crack lines for fracture look.
   function makeFractureNormalTexture() {
     const size = 1024;
     const c = document.createElement("canvas");
     c.width = c.height = size;
     const ctx = c.getContext("2d");
 
-    // Base noise
+    // Base noise around tangent-space neutral
     const img = ctx.createImageData(size, size);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
-      const nx = 128 + (Math.random() - 0.5) * 50;
-      const ny = 128 + (Math.random() - 0.5) * 50;
+      const nx = 128 + (Math.random() - 0.5) * 60;
+      const ny = 128 + (Math.random() - 0.5) * 60;
       d[i]     = nx;
       d[i + 1] = ny;
       d[i + 2] = 255;
@@ -119,13 +124,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     }
     ctx.putImageData(img, 0, 0);
 
-    // Bezier crack lines — strong off-axis normals
+    // Crack lines as off-axis normals
     ctx.lineCap = "round";
-    for (let i = 0; i < 40; i++) {
-      const r = 80 + Math.random() * 80;
-      const g = 80 + Math.random() * 80;
-      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.55)`;
-      ctx.lineWidth = 1 + Math.random() * 2;
+    for (let i = 0; i < 60; i++) {
+      const r = 60 + Math.random() * 100;
+      const g = 60 + Math.random() * 100;
+      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.65)`;
+      ctx.lineWidth = 1 + Math.random() * 2.5;
       ctx.beginPath();
       const x0 = Math.random() * size;
       const y0 = Math.random() * size;
@@ -148,12 +153,66 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return tex;
   }
 
+  // 3. FLOOR RIPPLE TEXTURE — concentric iridescent cyan/lavender bands.
+  function makeRippleTexture() {
+    const size = 1024;
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const ctx = c.getContext("2d");
+
+    // Base — soft off-white field
+    ctx.fillStyle = "#F4F6FA";
+    ctx.fillRect(0, 0, size, size);
+
+    const cx = size * 0.5;
+    const cy = size * 0.5;
+    const maxR = size * 0.6;
+
+    // Concentric rings, hue shifting from cyan (180) to lavender (270) and back.
+    // Two overlapping passes give the iridescent shimmer.
+    for (let r = 4; r < maxR; r += 3) {
+      const t = r / maxR;
+      const hue = 180 + Math.sin(t * 7.0) * 50 + 30 * t;   // 180 -> ~280
+      const sat = 65 - t * 25;
+      const light = 78 + Math.sin(t * 22.0) * 8;
+      const alpha = 0.22 * (1.0 - t * 0.7);
+      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, ${sat.toFixed(1)}%, ${light.toFixed(1)}%, ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Brighter highlight rings every 28px for the "ripple" punch
+    for (let r = 14; r < maxR; r += 28) {
+      const t = r / maxR;
+      const hue = 200 + Math.sin(t * 4.0) * 50;
+      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, 70%, 88%, ${(0.35 * (1.0 - t)).toFixed(3)})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Outer edge fade to white so floor blends into BG
+    const edgeGrad = ctx.createRadialGradient(cx, cy, maxR * 0.7, cx, cy, size * 0.5);
+    edgeGrad.addColorStop(0.0, "rgba(255,255,255,0)");
+    edgeGrad.addColorStop(1.0, "rgba(255,255,255,1)");
+    ctx.fillStyle = edgeGrad;
+    ctx.fillRect(0, 0, size, size);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
+  }
+
   const displacementMap = makeDisplacementTexture();
   const fractureNormal  = makeFractureNormalTexture();
+  const rippleMap       = makeRippleTexture();
 
   /* ============================================================
-     GEOMETRY — stealth manta, heavily subdivided so displacement
-     and normalMap have vertices to push around.
+     GEOMETRY — stealth manta, heavily subdivided.
      ============================================================ */
   const shape = new THREE.Shape();
   shape.moveTo(0, 0.6);
@@ -168,21 +227,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     bevelEnabled: true,
     bevelThickness: 0.2,
     bevelSize: 0.1,
-    bevelSegments: 24,    // up from 16 — more verts for displacement
-    curveSegments: 64,    // up from 40 — smoother + more verts
-    steps: 8              // subdivide depth axis for displacement
+    bevelSegments: 24,
+    curveSegments: 64,
+    steps: 8
   };
   const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
   geometry.center();
   geometry.computeVertexNormals();
 
   /* ============================================================
-     MATERIAL — diamond glass + displacement + fractures
+     MANTA MATERIAL — diamond glass + Fresnel edge glow
      ============================================================ */
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x888888,                  // v1.2 — was 0xffffff; mid-grey tints the
-                                      // transmitted light so the manta is visibly
-                                      // darker than the white BG behind it.
+    color: 0x888888,
     metalness: 0.0,
     roughness: 0.0,
     transmission: 1.0,
@@ -192,22 +249,49 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     attenuationDistance: 0.25,
     attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
-    opacity: 0.9,                     // v1.2 — was implicit 1.0; gives 10%
-                                      // alpha-blend visibility on top of transmission
+    opacity: 0.9,
     emissive: new THREE.Color(ARCTIC_BLUE),
     emissiveIntensity: 0.0,
 
-    // v1.1 — body bulge (was scale 0.8 / bias -0.4: mesh self-inverted because
-    // edge UVs computed to -0.4 along normal on a 0.05-thick extrude, folding
-    // front and back faces through each other). Bias 0 ensures only outward push.
     displacementMap: displacementMap,
     displacementScale: 0.25,
     displacementBias: 0.0,
 
-    // v1.0 — internal fractures
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(1.4, 1.4)
+    normalScale: new THREE.Vector2(2.0, 2.0)   // v1.3 — was 1.4; punchier fractures
   });
+
+  // FRESNEL via onBeforeCompile.
+  // Adds white emissive at glancing angles -> bright edges, clear center.
+  // Uses the standard view-space varyings vNormal (declared by normal_pars_fragment)
+  // and vViewPosition (declared by viewport_pars_fragment / set in vertex stage).
+  const fresnelUniforms = {
+    fresnelPower:     { value: 2.5 },
+    fresnelIntensity: { value: 1.6 },
+    fresnelColor:     { value: new THREE.Color(0xFFFFFF) }
+  };
+  mantaMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.fresnelPower     = fresnelUniforms.fresnelPower;
+    shader.uniforms.fresnelIntensity = fresnelUniforms.fresnelIntensity;
+    shader.uniforms.fresnelColor     = fresnelUniforms.fresnelColor;
+
+    shader.fragmentShader =
+      `uniform float fresnelPower;
+       uniform float fresnelIntensity;
+       uniform vec3  fresnelColor;
+      ` + shader.fragmentShader;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <emissivemap_fragment>",
+      `#include <emissivemap_fragment>
+       float fresnelTerm = pow(
+         1.0 - clamp(abs(dot(normalize(vNormal), normalize(vViewPosition))), 0.0, 1.0),
+         fresnelPower
+       );
+       totalEmissiveRadiance += fresnelColor * fresnelTerm * fresnelIntensity;
+      `
+    );
+  };
 
   const manta = new THREE.Mesh(geometry, mantaMaterial);
   manta.rotation.x = -0.2;
@@ -215,19 +299,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   manta.receiveShadow = false;
   scene.add(manta);
 
-  // Inner glow — cyan pointlight inside the wing.
+  // Inner cyan PointLight — stays inside the wing, glows from within.
   const innerLight = new THREE.PointLight(0x00FFFF, 2.0, 3, 2);
   manta.add(innerLight);
 
   /* ============================================================
-     FLOOR — refractive plane that catches the shadow.
+     FLOOR — iridescent ripple plane, anchor of the scene.
      ============================================================ */
-  const floorGeo = new THREE.PlaneGeometry(20, 20);
+  const floorGeo = new THREE.PlaneGeometry(20, 20, 64, 64);
   const floorMat = new THREE.MeshPhysicalMaterial({
     color: 0xFFFFFF,
+    map: rippleMap,
     metalness: 0.0,
-    roughness: 0.2,
-    transmission: 0.5,
+    roughness: 0.35,         // a bit hazier so the spotlight pool reads
+    transmission: 0.2,       // v1.3 — was 0.5; rings show through clearly
     ior: 1.45,
     thickness: 0.5,
     transparent: true,
@@ -240,18 +325,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   scene.add(floor);
 
   /* ============================================================
-     LIGHTING — RectAreaLight key + shadow-only directional + rim
+     LIGHTING
      ============================================================ */
   scene.add(new THREE.AmbientLight(0xFFFFFF, 0.3));
 
-  // KEY: RectAreaLight — long rectangular highlights, not a round sun-dot.
+  // KEY: RectAreaLight — long rectangular highlights.
   const keyLight = new THREE.RectAreaLight(0xFFFFFF, 8.0, 4.0, 1.0);
   keyLight.position.set(1, 3, 2);
   keyLight.lookAt(0, 0, 0);
   scene.add(keyLight);
 
-  // SHADOW CASTER: RectAreaLight cannot cast shadows in three.js,
-  // so a low-intensity DirectionalLight handles shadow projection only.
+  // SHADOW CASTER: low-intensity DirectionalLight (RectAreaLight can't cast shadows).
   const shadowLight = new THREE.DirectionalLight(0xFFFFFF, 0.6);
   shadowLight.position.set(1, 3, 2);
   shadowLight.target.position.set(0, 0, 0);
@@ -275,27 +359,30 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   scene.add(rimLight.target);
   scene.add(rimLight);
 
+  // POOL: top-down SpotLight — creates the bright pool on the floor ripples.
+  const poolLight = new THREE.SpotLight(0xFFFFFF, 60.0, 8.0, Math.PI / 7, 0.55, 1.4);
+  poolLight.position.set(0, 4.0, 0);
+  poolLight.target.position.set(0, -2.0, 0);
+  scene.add(poolLight.target);
+  scene.add(poolLight);
+
   /* ============================================================
-     POST-PROCESSING — EffectComposer + UnrealBloomPass
+     POST-PROCESSING
      ============================================================ */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   composer.setSize(window.innerWidth, window.innerHeight);
-
   composer.addPass(new RenderPass(scene, camera));
 
-  // v1.2 — selective bloom: only the cyan pulse crosses threshold.
-  // Combined with toneMappingExposure 0.8, BG sits below 1.0 luminance.
-  // Pulse peak 3.0 is the only thing that exceeds threshold 1.0 -> only it blooms.
+  // Selective bloom — only HDR pulse + Fresnel rim cross threshold 1.1.
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.2,   // strength  (v1.2 — was 2.0; less aggressive halo)
-    0.5,   // radius    (per spec)
-    1.0    // threshold (v1.2 — was 1.05)
+    1.2,   // strength
+    0.5,   // radius
+    1.1    // threshold (v1.3 — was 1.0; tighter selection, no fog)
   );
   composer.addPass(bloomPass);
-
-  composer.addPass(new OutputPass());   // tone-map + colorspace correction
+  composer.addPass(new OutputPass());
 
   /* ============================================================
      Tick loop
@@ -305,10 +392,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     manta.rotation.y = Math.sin(tSec * 0.1) * 0.15;
     manta.position.y = Math.sin(tSec * 0.15) * 0.05;
 
-    // Pulse — exponential falloff every 4 seconds. v1.1: peak * 3.0 (was 1.0).
-    // Peak must exceed bloom threshold (1.05) AND exceed white BG luminance to
-    // bloom selectively. With ACES tone mapping the peak compresses to a clean
-    // cyan flash rather than blowing out to white.
+    // Pulse — peak 3.0 (HDR, exceeds bloom threshold).
     const phase = (tSec % 4.0) / 4.0;
     const peak = Math.exp(-phase * 8.0);
     mantaMaterial.emissiveIntensity = peak * 3.0;
@@ -319,7 +403,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   requestAnimationFrame(tick);
 
   /* ============================================================
-     Resize — both renderer and composer.
+     Resize
      ============================================================ */
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -361,5 +445,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.2 — Out of the fog (selective bloom + grey crystal) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.3 — Sleek Glacier Monolith (ripples + fresnel + pool) · Three.js", THREE.REVISION);
 })();
