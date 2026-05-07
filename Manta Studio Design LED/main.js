@@ -208,17 +208,56 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     roughness: 0.0,
     transmission: 1.0,
     ior: 1.65,
-    thickness: 4.0,
-    envMapIntensity: 2.0,                        // v1.13 — was 1.5; modest bump for reflective sparkle
+    thickness: 6.0,                              // v1.14 — was 4.0; more cyan absorption depth
+    envMapIntensity: 2.0,
     attenuationDistance: 0.4,
-    attenuationColor: new THREE.Color(0x70BFFF),
+    attenuationColor: new THREE.Color(0x3FA0E5), // v1.14 — was 0x70BFFF; much deeper cyan-blue
     transparent: true,
     side: THREE.DoubleSide,
     clearcoat: 0.5,
-    clearcoatRoughness: 0.04,                    // v1.13 — was 0.10; mirror-finish clearcoat (crystalline)
+    clearcoatRoughness: 0.04,
+    iridescence: 0.3,                            // v1.14 — added; subtle blue-pink shifts at angles
+    iridescenceIOR: 1.3,
+    iridescenceThicknessRange: [100, 400],
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(1.5, 1.5)     // v1.13 — was 1.0; cracks more visible
+    normalScale: new THREE.Vector2(1.5, 1.5)
   });
+
+  // v1.14 — Fresnel-darkening shader injection.
+  // Multiplies the final fragment color by a dark cyan tint at glancing
+  // angles to simulate total internal reflection at silhouette edges.
+  // Uses standard view-space varyings (vNormal, vViewPosition).
+  const fresnelUniforms = {
+    fresnelPower:    { value: 2.5 },
+    fresnelStrength: { value: 0.45 },
+    fresnelTint:     { value: new THREE.Color(0x1A4880) }   // dark blue
+  };
+  glassMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.fresnelPower    = fresnelUniforms.fresnelPower;
+    shader.uniforms.fresnelStrength = fresnelUniforms.fresnelStrength;
+    shader.uniforms.fresnelTint     = fresnelUniforms.fresnelTint;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <common>",
+      `#include <common>
+       uniform float fresnelPower;
+       uniform float fresnelStrength;
+       uniform vec3  fresnelTint;`
+    );
+
+    // Inject just before the colorspace conversion: at this point gl_FragColor
+    // has the full transmission + clearcoat + iridescence result. We modulate it.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <colorspace_fragment>",
+      `float fresnelTerm = pow(
+         1.0 - clamp(abs(dot(normalize(vNormal), normalize(vViewPosition))), 0.0, 1.0),
+         fresnelPower
+       );
+       vec3 fresnelMul = mix(vec3(1.0), fresnelTint, fresnelTerm * fresnelStrength);
+       gl_FragColor.rgb *= fresnelMul;
+       #include <colorspace_fragment>`
+    );
+  };
 
   /* ============================================================
      LOAD THE MANTA GLTF
@@ -286,24 +325,66 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   );
 
   /* ============================================================
-     FLOOR — iridescent ripple plane
+     FLOOR — animated ShaderMaterial with real moving ripples
+     v1.14 — replaced static CanvasTexture with a ShaderMaterial.
+     uTime drives concentric sin-wave bands expanding outward, with
+     hue cycling between cyan and lavender. No more dead pixels.
      ============================================================ */
-  const floorGeo = new THREE.PlaneGeometry(20, 20, 64, 64);
-  const floorMat = new THREE.MeshPhysicalMaterial({
-    color: 0xFFFFFF,
-    map: rippleMap,
-    metalness: 0.0,
-    roughness: 0.35,
-    transmission: 0.2,
-    ior: 1.45,
-    thickness: 0.5,
-    transparent: true,
+  const floorGeo = new THREE.PlaneGeometry(20, 20, 1, 1);
+  const floorMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      uniform float uTime;
+
+      void main() {
+        vec2 offset = vUv - vec2(0.5);
+        float dist = length(offset);
+
+        // Soft radial fade so the floor blends into BG
+        float fade = smoothstep(0.45, 0.10, dist);
+
+        // Three layered ripples at different frequencies / phases.
+        // The negative uTime coefficient makes them expand outward.
+        float w1 = sin(dist * 65.0 - uTime * 1.2);
+        float w2 = sin(dist * 42.0 - uTime * 0.7);
+        float w3 = sin(dist * 95.0 - uTime * 1.6);
+        float ripple = (w1 * 0.5 + w2 * 0.3 + w3 * 0.2);
+
+        // Color cycles between cyan and lavender along the radius and over time
+        float hueT = sin(dist * 4.5 - uTime * 0.4) * 0.5 + 0.5;
+        vec3 cyan     = vec3(0.30, 0.85, 1.00);
+        vec3 lavender = vec3(0.82, 0.68, 1.00);
+        vec3 bandColor = mix(cyan, lavender, hueT);
+
+        // Off-white base
+        vec3 base = vec3(0.96, 0.97, 0.99);
+
+        // Ripple defines opacity, fade attenuates it
+        float alpha = (ripple * 0.5 + 0.5) * fade * 0.45;
+        vec3 finalColor = mix(base, bandColor, alpha);
+
+        gl_FragColor = vec4(finalColor, 1.0);
+      }
+    `,
     side: THREE.DoubleSide
   });
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -1.4;
-  floor.receiveShadow = true;
+  // Note: ShaderMaterial doesn't auto-receive shadows — pool light
+  // shadow on floor is sacrificed for moving ripples. Trade looks
+  // good in practice because the ripples themselves dominate the
+  // floor visual.
   scene.add(floor);
 
   /* ============================================================
@@ -366,6 +447,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   function tick() {
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
+    floorMat.uniforms.uTime.value = clock.elapsedTime;   // v1.14 — drive shader animation
     composer.render();
     requestAnimationFrame(tick);
   }
@@ -414,5 +496,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.13 — Restore selective brights (key light + clearcoat sharp + crack contrast) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.14 — Bold pass: animated floor shader + fresnel-darkened cyan + iridescence · Three.js", THREE.REVISION);
 })();
