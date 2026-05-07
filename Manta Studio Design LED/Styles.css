@@ -7,7 +7,7 @@
    ============================================================ */
 
 :root {
-  --bg:        #F5F5F7;   /* Storm White */
+  --bg:        #F0F0F0;   /* v0.26 — slightly darker grey for ice contrast */
   --ink-dark:  #1C1C1E;   /* near-black */
   --cyan:      #00FFFF;   /* Arctic Blue accent */
 }

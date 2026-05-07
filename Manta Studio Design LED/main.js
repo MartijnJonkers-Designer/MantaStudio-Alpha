@@ -24,7 +24,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     return;
   }
 
-  const BG_COLOR    = 0xF5F5F7;
+  const BG_COLOR    = 0xF0F0F0;     // v0.26 — slightly darker grey for ice contrast
   const ARCTIC_BLUE = 0x00FFFF;
 
   /* -------- Scene + camera -------- */
@@ -44,8 +44,13 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
+    alpha: true,                       // v0.26 brief — alpha is a constructor option
     powerPreference: "high-performance",
   });
+  /* NB: outputEncoding = sRGBEncoding was removed in Three.js r152.
+     The default outputColorSpace = SRGBColorSpace already handles sRGB
+     output, so the v0.26 brief's directive is effectively already in
+     place — no explicit line needed. */
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.setClearColor(BG_COLOR, 1);
@@ -86,21 +91,23 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   /* No rotateX — geometry stays in XY plane facing the camera at z=5. */
 
   const mantaMaterial = new THREE.MeshPhysicalMaterial({
-    color:               0xFFFFFF,    // pure white — ice color comes from env
+    color:               0xFFFFFF,
     metalness:           0.0,
-    transmission:        1.0,         // per v0.24 brief
-    thickness:           2.0,         // per v0.24 brief (down from 2.5)
-    roughness:           0.02,
-    ior:                 1.5,         // per v0.24 brief
-    envMapIntensity:     3.0,         // per v0.24 brief (up from 2.5)
-    attenuationDistance: 1.5,
-    attenuationColor:    new THREE.Color(0xFFFFFF),  // white — no internal blue tint
-    transparent:         true,        // per v0.24 brief
-    opacity:             1.0,         // per v0.24 brief
+    transmission:        1.0,
+    thickness:           1.5,                              // v0.26 — was 2.0
+    roughness:           0.0,                              // v0.26 — was 0.02 (mirror smooth)
+    ior:                 1.5,
+    envMapIntensity:     3.0,
+    /* v0.26 attenuation: distance dropped to 0.5, color back to icy blue.
+       Light absorbed faster -> thick parts of the slab take on the blue
+       tint, thin edges stay clear. This is what makes 'ice look like ice'. */
+    attenuationDistance: 0.5,
+    attenuationColor:    new THREE.Color(0xC0E8FF),
+    transparent:         true,
+    opacity:             1.0,
     emissive:            new THREE.Color(ARCTIC_BLUE),
     emissiveIntensity:   0.0,         // animated by pulse
     side:                THREE.DoubleSide,
-    /* clearcoat removed in v0.24 — was contributing to 'plastic' feel */
   });
 
   const manta = new THREE.Mesh(geometry, mantaMaterial);
@@ -119,8 +126,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
      where the env map is uniform. */
   scene.add(new THREE.AmbientLight(0xFFFFFF, 0.4));
 
-  const keyLight = new THREE.DirectionalLight(0xFFFFFF, 1.2);
-  keyLight.position.set(1.5, 2.5, 1.0);
+  const keyLight = new THREE.DirectionalLight(0xFFFFFF, 5.0);   // v0.26 — was 1.2
+  keyLight.position.set(0.5, 2.5, 2.5);                          // front-top per brief
   scene.add(keyLight);
 
   const fillLight = new THREE.DirectionalLight(0xCCDDFF, 0.5);
@@ -190,5 +197,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.25 — Crystal Wing · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.26 — Ice Revival · Three.js", THREE.REVISION);
 })();
