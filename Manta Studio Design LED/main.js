@@ -1,15 +1,19 @@
 /* ============================================================
-   AUROS — Liquid Engine v0.15 (Vortex + ripple rings)
+   AUROS — Liquid Engine v0.16 (Manta Core: obsidian + molten gold)
 
-   v0.14 baseline + reference-image-driven additions:
-     - Tangential swirl around cursor (spirals form)
-     - Concentric ripple rings (outward sinusoidal waves)
-     - Sharper localized peak at cursor (vertical lift)
-     - Density bump: 108k -> 172,800 points (480 x 360)
-     - Brighter peak color + subtle bloom for crest glow
+   Full architectural rebuild toward the concept render's volumetric
+   gold topography. Switches from THREE.Points to THREE.InstancedMesh
+   with billboarded PlaneGeometry quads, scales density ~3x to 480k
+   instances, swaps to the obsidian/gold palette, and replaces the
+   radial cursor push with a perpendicular-to-motion channel wake.
+
+   Performance reality: 480k instances is the practical ceiling for
+   per-instance fbm in the vertex shader at 60fps on consumer GPUs.
+   "20x" from the brief was not achievable interactively; this is ~3x.
 
    Pipeline:
-     ShaderMaterial -> RenderPass -> UnrealBloomPass (subtle) -> OutputPass
+     ShaderMaterial (InstancedMesh) -> RenderPass -> UnrealBloomPass
+       -> OutputPass
    ============================================================ */
 
 import * as THREE from "three";
@@ -25,20 +29,27 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     return;
   }
 
-  const SLATE = 0x1A1B26;
+  const OBSIDIAN = 0x030305;
 
-  /* -------- Scene + camera -------- */
+  /* -------- Scene + camera --------
+     Wider FOV than v0.15 (60 vs 55) for stronger perspective. Camera
+     positioned for a roughly 30° downward pitch — topographic but not
+     bird's-eye. Position is updated per-frame with mouse parallax. */
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(SLATE);
+  scene.background = new THREE.Color(OBSIDIAN);
 
   const camera = new THREE.PerspectiveCamera(
-    55,
+    60,
     window.innerWidth / window.innerHeight,
     0.05,
     20
   );
-  camera.position.set(0, 1.0, 1.5);
-  camera.lookAt(0, 0, -0.5);
+  const camBaseY = 0.85;
+  const camBaseZ = 1.30;
+  const camLookY = 0.0;
+  const camLookZ = -0.40;
+  camera.position.set(0, camBaseY, camBaseZ);
+  camera.lookAt(0, camLookY, camLookZ);
 
   /* -------- Renderer -------- */
   const renderer = new THREE.WebGLRenderer({
@@ -49,26 +60,20 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
-  renderer.setClearColor(SLATE, 1);
+  renderer.setClearColor(OBSIDIAN, 1);
 
-  /* -------- Geometry: 172,800 points (denser than v0.13/14) -------- */
-  const GRID_W = 480;
-  const GRID_D = 360;
+  /* -------- InstancedMesh: 480,000 billboarded quads --------
+     Each instance's position is baked into instanceMatrix at startup.
+     The vertex shader extracts that XZ position, computes height each
+     frame from fbm + sine + ripple, and offsets the base quad's local
+     vertices along camera-aligned right/up axes (billboard). */
+  const GRID_W = 800;
+  const GRID_D = 600;
   const GRID_X = 4.8;
   const GRID_Z = 4.0;
-  const TOTAL  = GRID_W * GRID_D;
+  const TOTAL  = GRID_W * GRID_D;   // 480,000
 
-  const positions = new Float32Array(TOTAL * 3);
-  for (let i = 0; i < GRID_D; i++) {
-    for (let j = 0; j < GRID_W; j++) {
-      const idx = (i * GRID_W + j) * 3;
-      positions[idx + 0] = (j / (GRID_W - 1) - 0.5) * GRID_X;
-      positions[idx + 1] = 0.0;
-      positions[idx + 2] = (i / (GRID_D - 1) - 0.5) * GRID_Z;
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const baseGeometry = new THREE.PlaneGeometry(0.008, 0.008);
 
   /* -------- Uniforms -------- */
   const uniforms = {
@@ -76,8 +81,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uMouse:     { value: new THREE.Vector2(0, 0) },
     uMouseVel:  { value: new THREE.Vector2(0, 0) },
     uDisplace:  { value: 0 },
-    uPointSize: { value: 5.5 },
-    uHeight:    { value: 0.18 },
+    uHeight:    { value: 0.22 },     // peak amplitude in world units
   };
 
   /* -------- Shaders -------- */
@@ -86,13 +90,13 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     uniform vec2  uMouse;
     uniform vec2  uMouseVel;
     uniform float uDisplace;
-    uniform float uPointSize;
     uniform float uHeight;
 
     varying float vHeight;
+    varying vec2  vQuadUv;
     varying vec2  vScreenUv;
 
-    /* Stefan Gustavson 2D simplex noise (public domain). */
+    /* Stefan Gustavson 2D simplex noise. */
     vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
     vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
     vec3 permute(vec3 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -135,101 +139,123 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     }
 
     void main() {
-      vec3 pos = position;
-      vec2 p2  = pos.xz;
+      /* Per-instance world position from instanceMatrix translation column. */
+      vec3 instancePos = vec3(instanceMatrix[3]);
+      vec2 p2 = instancePos.xz;
 
-      /* ---- Ambient field: domain-warped fbm + manta wing flap ---- */
-      float t = uTime * 0.08;
-      vec2 q = p2 * 1.6;
+      /* ---- Ambient field: dramatic sine wave dominant + fbm detail ----
+         Per the brief, the sine is the PRIMARY motion. fbm halved
+         to 0.5 contribution so it's only surface texture. */
+      float t = uTime * 0.07;
+      vec2 q = p2 * 1.4;
       vec2 warp = vec2(
         fbm(q + vec2(t,         0.0      )),
         fbm(q + vec2(0.0,       t * 0.8  ))
       );
       vec2 q2 = q + warp * 0.55;
-      float h = fbm(q2 + vec2(t * 0.5));
+      float h_fbm = fbm(q2 + vec2(t * 0.5)) * 0.50;
 
-      // Long-wavelength sine — slow rhythmic flap traveling left -> right
-      float wing = sin(pos.x * 0.7 + uTime * 0.7) * 0.45;
-      h += wing;
+      // Slow viscous wing flap, long wavelength, dominant amplitude.
+      float wing = sin(p2.x * 0.5 + uTime * 0.40) * 1.0;
 
-      /* ---- Mouse interaction (5 layered effects) ----
-         Each effect uses its own falloff envelope so they coexist
-         without competing — sharp peak at center, ripples mid-range,
-         spiral around cursor, wake along motion direction. */
+      float h = wing + h_fbm;
+
+      /* ---- Mouse cursor effects (5 layered) ---- */
       vec2 toM = p2 - uMouse;
       float d = length(toM);
-      float envClose = exp(-d * 3.0);   // tight (vertical lift, radial push)
-      float envBroad = exp(-d * 1.5);   // mid (rings, swirl, wake)
+      float envClose = exp(-d * 3.0);
+      float envBroad = exp(-d * 1.5);
 
-      // 1. Vertical lift — narrow peak right at cursor
+      // 1. Vertical lift — sharp narrow peak at cursor
       h += envClose * uDisplace * 0.55;
 
-      // 2. Concentric ripple rings — sin(distance - time) creates outgoing waves
+      // 2. Concentric outgoing ripples
       float ringPhase = d * 14.0 - uTime * 5.0;
       h += sin(ringPhase) * envBroad * uDisplace * 0.10;
 
-      // 3. Radial outward push — particles flee cursor
-      vec2 radial = (d > 0.001) ? toM / d : vec2(0.0);
-      pos.x += radial.x * envClose * uDisplace * 0.05;
-      pos.z += radial.y * envClose * uDisplace * 0.05;
-
-      // 4. Tangential swirl — perpendicular to radial. Combined with the
-      //    radial push, particles trace spirals around the cursor.
+      // 3. Tangential swirl — perpendicular to radial
+      vec2 radial  = (d > 0.001) ? toM / d : vec2(0.0);
       vec2 tangent = vec2(-radial.y, radial.x);
-      pos.x += tangent.x * envBroad * uDisplace * 0.08;
-      pos.z += tangent.y * envBroad * uDisplace * 0.08;
+      vec2 swirl   = tangent * envBroad * uDisplace * 0.08;
+      instancePos.x += swirl.x;
+      instancePos.z += swirl.y;
 
-      // 5. Motion wake — particles get carried in cursor's direction of motion
+      // 4. Channel push — particles pushed perpendicular to mouse motion
+      //    direction, leaving a parted channel along the path of motion.
+      float speed2 = dot(uMouseVel, uMouseVel);
+      if (speed2 > 0.00005) {
+        vec2 motionUnit = uMouseVel / sqrt(speed2);
+        vec2 motionPerp = vec2(-motionUnit.y, motionUnit.x);
+        float perpDist  = dot(toM, motionPerp);
+        // Localize the channel band along the line of motion
+        float along     = abs(dot(toM, motionUnit));
+        float bandFalloff = exp(-along * 1.5) * exp(-abs(perpDist) * 1.0);
+        vec2 channel = motionPerp * sign(perpDist)
+                      * bandFalloff * sqrt(speed2) * 0.18;
+        instancePos.x += channel.x;
+        instancePos.z += channel.y;
+      }
+
+      // 5. Motion wake — particles get carried in cursor's direction
       vec2 wake = uMouseVel * envBroad * 0.10;
-      pos.x += wake.x;
-      pos.z += wake.y;
+      instancePos.x += wake.x;
+      instancePos.z += wake.y;
 
-      /* ---- Final position ---- */
-      pos.y = h * uHeight;
+      /* Apply combined height. */
+      instancePos.y = h * uHeight;
 
-      vec4 mvPos     = modelViewMatrix * vec4(pos, 1.0);
-      gl_Position    = projectionMatrix * mvPos;
-      gl_PointSize   = max(uPointSize / -mvPos.z, 1.0);
+      /* ---- Billboard: rotate quad vertices to face camera ----
+         viewMatrix's first/second columns are world-space right/up. */
+      vec3 right = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
+      vec3 up    = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+      vec3 worldPos = instancePos + right * position.x + up * position.y;
 
-      vHeight   = h * 0.5 + 0.5;
+      vec4 mvPos    = viewMatrix * vec4(worldPos, 1.0);
+      gl_Position   = projectionMatrix * mvPos;
+
+      vHeight   = h * 0.4 + 0.5;                                  // [~0, 1] band
+      vQuadUv   = uv;
       vScreenUv = (gl_Position.xy / gl_Position.w) * 0.5 + 0.5;
     }
   `;
 
   const fragmentShader = /* glsl */ `
     varying float vHeight;
+    varying vec2  vQuadUv;
     varying vec2  vScreenUv;
 
-    /* Palette. */
-    const vec3 cValley = vec3(0.1020, 0.1059, 0.1490);
-    const vec3 cPeak   = vec3(0.7333, 0.6039, 0.9686);
+    /* Palette — obsidian -> dim slate-blue -> molten gold -> near-white. */
+    const vec3 cValley = vec3(0.0118, 0.0118, 0.0196);   // #030305
+    const vec3 cMid    = vec3(0.0784, 0.0902, 0.1255);   // dim slate-blue
+    const vec3 cGold   = vec3(0.8314, 0.6863, 0.2157);   // #D4AF37
+    const vec3 cSpec   = vec3(1.0000, 0.9500, 0.5000);   // bright crest highlight
 
     void main() {
-      /* Sharp circular point. */
-      vec2 cc = gl_PointCoord - 0.5;
+      /* Sharp circular discard from quad UV. */
+      vec2 cc = vQuadUv - 0.5;
       float r2 = dot(cc, cc);
       if (r2 > 0.25) discard;
 
-      /* Color by height. */
-      vec3 col = mix(cValley, cPeak, smoothstep(0.20, 0.85, vHeight));
+      /* Two-stop palette: valleys -> mid -> gold by height. */
+      float tA = smoothstep(0.0, 0.40, vHeight);    // valley -> mid
+      float tB = smoothstep(0.45, 0.85, vHeight);   // mid -> gold
+      vec3 col = mix(cValley, cMid, tA);
+      col      = mix(col,     cGold, tB);
 
-      /* Crest glow boost — peaks brighten beyond their lavender base. */
-      col *= 0.70 + smoothstep(0.40, 0.90, vHeight) * 0.55;
+      /* Crest "veins of light" — push the highest peaks toward bright
+         yellow-white so they exceed the bloom threshold and halo into
+         continuous golden streams when overlapping. */
+      float crestBoost = pow(smoothstep(0.65, 0.95, vHeight), 1.5);
+      col = mix(col, cSpec, crestBoost * 0.55);
 
-      /* Near-white-lavender boost on the brightest crests — pushes those
-         pixels above the bloom threshold so they halo cleanly. */
-      float crestBoost = pow(smoothstep(0.55, 0.95, vHeight), 1.5);
-      col = mix(col, vec3(1.00, 0.95, 1.05), crestBoost * 0.45);
-
-      /* Specular fake — peaks favoring upper-left light. */
+      /* Soft specular favoring upper-left light direction. */
       vec2 toLight = normalize(vec2(-1.0, 1.0));
-      float align = dot(toLight, (vScreenUv - 0.5) * 2.0);
-      align = clamp(align * 0.5 + 0.5, 0.0, 1.0);
-      float spec = pow(vHeight * align, 4.0) * 0.75;
-      col += spec * vec3(0.55, 0.55, 0.65);
+      float align  = clamp(dot(toLight, (vScreenUv - 0.5) * 2.0) * 0.5 + 0.5, 0.0, 1.0);
+      float spec   = pow(vHeight * align, 4.0) * 0.6;
+      col += spec * vec3(0.55, 0.45, 0.20);
 
-      /* Dynamic opacity: valleys fade, peaks stay solid. */
-      float alpha = 0.25 + 0.75 * smoothstep(0.0, 0.65, vHeight);
+      /* Dynamic opacity — valleys nearly invisible, peaks solid. */
+      float alpha = 0.18 + 0.82 * smoothstep(0.05, 0.65, vHeight);
 
       gl_FragColor = vec4(col, alpha);
     }
@@ -244,12 +270,24 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     depthWrite:  false,
   });
 
-  const points = new THREE.Points(geometry, material);
-  scene.add(points);
+  const mesh = new THREE.InstancedMesh(baseGeometry, material, TOTAL);
+  mesh.frustumCulled = false;       // we displace verts past their original bounds
 
-  /* -------- Post-processing: subtle bloom on crest highlights --------
-     threshold 0.40 ensures only the near-white-lavender peak boost
-     pixels bloom; the valley dots are far below threshold. */
+  /* Bake instance matrices once (only XZ position; Y comes from shader). */
+  const tmpMat = new THREE.Matrix4();
+  let idx = 0;
+  for (let zi = 0; zi < GRID_D; zi++) {
+    for (let xi = 0; xi < GRID_W; xi++) {
+      const wx = (xi / (GRID_W - 1) - 0.5) * GRID_X;
+      const wz = (zi / (GRID_D - 1) - 0.5) * GRID_Z;
+      tmpMat.makeTranslation(wx, 0, wz);
+      mesh.setMatrixAt(idx++, tmpMat);
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
+
+  /* -------- Post-processing: bloom (stronger than v0.15 for veins) -------- */
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(window.innerWidth, window.innerHeight);
@@ -258,9 +296,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.15,    // strength    — subtle halo on crests
-    0.50,    // radius
-    0.40     // threshold   — only crest-boosted pixels bloom
+    0.30,    // strength    — visible halo for crest veins
+    0.55,    // radius
+    0.50     // threshold   — only crest-boosted pixels bloom
   );
   composer.addPass(bloomPass);
 
@@ -278,6 +316,9 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   let mouseVelX    = 0, mouseVelZ    = 0;
   let displaceEnergy = 0;
 
+  /* Camera parallax + mesh tilt — both lerp slowly for viscous feel. */
+  let camTargetX = 0, camTargetY = 0;
+  let camSmoothX = 0, camSmoothY = 0;
   let tiltTargetX = 0, tiltTargetZ = 0;
   let tiltSmoothX = 0, tiltSmoothZ = 0;
 
@@ -293,6 +334,11 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
       mouseTargetZ = hitPoint.z;
     }
 
+    /* Camera position parallax — small offset toward mouse. */
+    camTargetX = (nx - 0.5) * 0.30;
+    camTargetY = (0.5 - ny) * 0.20;
+
+    /* Mesh tilt — slight scene rotation. */
     tiltTargetX = -(ny - 0.5) * 0.10;
     tiltTargetZ = -(nx - 0.5) * 0.06;
   }, { passive: true });
@@ -304,7 +350,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     composer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  /* -------- Tick — viscous lerps (v0.14 settings) -------- */
+  /* -------- Tick — viscous lerps -------- */
   const TAU         = 0.60;
   const FOLLOW      = 0.12;
   const ENERGY_K    = 25.0;
@@ -312,6 +358,7 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
   const VEL_DECAY   = 0.88;
   const VEL_INJECT  = 4.5;
   const TILT_LERP   = 0.04;
+  const CAM_LERP    = 0.035;
 
   let lastT = 0;
   function tick(tMs) {
@@ -319,9 +366,11 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     const dt   = lastT === 0 ? 0.016 : Math.min((tMs - lastT) * 0.001, 0.05);
     lastT = tMs;
 
+    /* Smoothed mouse position. */
     mouseSmoothX += (mouseTargetX - mouseSmoothX) * FOLLOW;
     mouseSmoothZ += (mouseTargetZ - mouseSmoothZ) * FOLLOW;
 
+    /* Velocity tracking for wake + channel. */
     const dx = mouseTargetX - mousePrevX;
     const dz = mouseTargetZ - mousePrevZ;
     mouseVelX = mouseVelX * VEL_DECAY + dx * VEL_INJECT;
@@ -329,15 +378,24 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
     mousePrevX = mouseTargetX;
     mousePrevZ = mouseTargetZ;
 
+    /* Displacement energy. */
     const speed = Math.sqrt(dx * dx + dz * dz);
     displaceEnergy = Math.min(displaceEnergy + speed * ENERGY_K, ENERGY_MAX);
     displaceEnergy *= Math.exp(-dt / TAU);
 
+    /* Mesh tilt. */
     tiltSmoothX += (tiltTargetX - tiltSmoothX) * TILT_LERP;
     tiltSmoothZ += (tiltTargetZ - tiltSmoothZ) * TILT_LERP;
-    points.rotation.x = tiltSmoothX;
-    points.rotation.z = tiltSmoothZ;
+    mesh.rotation.x = tiltSmoothX;
+    mesh.rotation.z = tiltSmoothZ;
 
+    /* Camera parallax — smooth lerp toward mouse-driven offset. */
+    camSmoothX += (camTargetX - camSmoothX) * CAM_LERP;
+    camSmoothY += (camTargetY - camSmoothY) * CAM_LERP;
+    camera.position.set(camSmoothX, camBaseY + camSmoothY, camBaseZ);
+    camera.lookAt(0, camLookY, camLookZ);
+
+    /* Push uniforms. */
     uniforms.uTime.value     = tSec;
     uniforms.uMouse.value.set(mouseSmoothX, mouseSmoothZ);
     uniforms.uMouseVel.value.set(mouseVelX, mouseVelZ);
@@ -349,6 +407,6 @@ import { OutputPass }        from "three/addons/postprocessing/OutputPass.js";
 
   requestAnimationFrame(tick);
 
-  console.log("[Auros] Liquid Engine v0.15 — vortex + ripple rings · Three.js", THREE.REVISION,
-              "·", TOTAL.toLocaleString(), "points");
+  console.log("[Auros] Liquid Engine v0.16 — Manta Core (obsidian + gold) · Three.js", THREE.REVISION,
+              "·", TOTAL.toLocaleString(), "instances");
 })();
