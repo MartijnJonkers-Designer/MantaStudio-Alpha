@@ -59,28 +59,29 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-  /* -------- Geometry: cubic-Bezier manta silhouette per v0.24 vertex map --------
-     Pre-bevel bbox: 3.0 x 1.3 (X: -1.5..+1.5, Y: -0.8..+0.5).
-     Wings extend wider; tail extends deeper than v0.23 — sharper sweep.
-     Bevel 0.05 is only 1.6% of width — keeps wing tips pointy.
-     Final bbox ~3.1 x 1.4 x 0.22 — wings span ~75% of screen at z=5.0. */
-  const mantaShape = new THREE.Shape();
-  mantaShape.moveTo(0,    0.5);                                       // Head
-  mantaShape.bezierCurveTo( 0.3,  0.5,   0.8,  0.2,   1.5,  0);       // Top of right wing -> tip
-  mantaShape.bezierCurveTo( 0.8, -0.2,   0.2, -0.3,   0.05, -0.8);    // Bottom of right wing -> tail
-  mantaShape.lineTo(-0.05, -0.8);                                     // Tail tip
-  mantaShape.bezierCurveTo(-0.2, -0.3,  -0.8, -0.2,  -1.5,  0);       // Bottom of left wing -> tip
-  mantaShape.bezierCurveTo(-0.8,  0.2,  -0.3,  0.5,   0,    0.5);     // Top of left wing -> head
+  /* -------- Geometry: v0.25 vertex map (sharper sweep, larger crystal bevel) --------
+     Pre-bevel bbox: 2.8 x 1.2 (X: -1.4..+1.4, Y: -0.8..+0.4).
+     Bevel 0.10 with 12 segments — small relative to width (3.6%) but
+     well-sampled so the bevel curve reads smooth, not faceted.
+     bevelThickness 0.15 vs depth 0.02 = bevel dominates Z; the slab
+     reads as a lens-cross-section crystal. */
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0.4);                                       // Nose
+  shape.bezierCurveTo( 0.15,  0.4,   0.4,  0.1,   1.4,  0);   // Swept right wing tip
+  shape.bezierCurveTo( 0.4,  -0.2,   0.1, -0.3,   0.05, -0.8);// Trailing edge to tail
+  shape.lineTo(-0.05, -0.8);                                  // Tail tip
+  shape.bezierCurveTo(-0.1, -0.3,  -0.4, -0.2,  -1.4,  0);    // Trailing edge to left wing tip
+  shape.bezierCurveTo(-0.4,  0.1,  -0.15, 0.4,   0,    0.4);  // Back to nose
 
   const extrudeSettings = {
-    depth:           0.02,    // per v0.24 brief — very thin slab
+    depth:           0.02,
     bevelEnabled:    true,
-    bevelSegments:   3,       // per v0.24 brief
-    bevelSize:       0.05,    // per v0.24 brief — small bevel preserves sharp tips
-    bevelThickness:  0.10,    // per v0.24 brief
-    curveSegments:   32,      // dense sampling so cubic Beziers stay smooth
+    bevelThickness:  0.15,    // per v0.25 brief — crystal depth in Z
+    bevelSize:       0.10,    // per v0.25 brief — sharpens wingtips
+    bevelSegments:   12,      // per v0.25 brief — smooth, not blocky
+    curveSegments:   32,      // dense Bezier sampling
   };
-  const geometry = new THREE.ExtrudeGeometry(mantaShape, extrudeSettings);
+  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
   geometry.center();
   /* No rotateX — geometry stays in XY plane facing the camera at z=5. */
 
@@ -189,5 +190,5 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
     });
   }
 
-  console.log("[Auros] v0.24 — Vertex-Mapped Manta · Three.js", THREE.REVISION);
+  console.log("[Auros] v0.25 — Crystal Wing · Three.js", THREE.REVISION);
 })();
