@@ -296,13 +296,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   loader.load(
     "model_84b_-_manta_ray_swimming.glb",
     (gltf) => {
-      manta = gltf.scene;
+      const mantaModel = gltf.scene;
 
       // 1. Override every material with the shared glass — meshes only.
-      //    Also count submeshes by type for diagnostics.
       let meshCount = 0;
       let skinnedCount = 0;
-      manta.traverse((child) => {
+      mantaModel.traverse((child) => {
         if (child.isMesh) {
           child.material = glassMaterial;
           child.castShadow = true;
@@ -312,18 +311,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         }
       });
 
-      // 2. v1.18 — Skinned-mesh aware bounding box.
-      //    Box3.setFromObject on the root often returns the bind-pose box
-      //    for skinned meshes, which can be tiny or huge depending on rig.
-      //    We instead expand the box from each Mesh's WORLD-space geometry
-      //    after updating world matrices. For SkinnedMesh we use
-      //    boundingBox computed from the geometry's bones if available.
-      manta.updateMatrixWorld(true);
+      // 2. Skinned-mesh aware bounding box (world-space, traversed).
+      mantaModel.updateMatrixWorld(true);
       const bbox = new THREE.Box3();
-      manta.traverse((child) => {
+      mantaModel.traverse((child) => {
         if (!child.isMesh) return;
         if (child.isSkinnedMesh && typeof child.computeBoundingBox === "function") {
-          // Three.js SkinnedMesh has computeBoundingBox that respects bones.
           child.computeBoundingBox();
           if (child.boundingBox) {
             const b = child.boundingBox.clone();
@@ -344,32 +337,36 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const center = bbox.getCenter(new THREE.Vector3());
       const longest = Math.max(size.x, size.y, size.z);
 
-      // v1.18 — Defensive scale clamp. If bbox math goes wrong (zero
-      // size, infinite, NaN), fall back to scale 1 so the manta is at
-      // least visible at native size for further diagnostics.
       let scale = 2.2 / longest;
       if (!isFinite(scale) || scale <= 0) {
         console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { size, longest });
         scale = 1.0;
       } else {
-        scale = Math.max(0.001, Math.min(scale, 1000));   // sanity clamp
+        scale = Math.max(0.001, Math.min(scale, 1000));
       }
 
-      manta.position.sub(center.multiplyScalar(scale));
-      manta.scale.setScalar(scale);
+      // 3. v1.19 — GROUP WRAPPER FIX.
+      //    Three.js applies node transforms in order: scale -> rotate -> translate.
+      //    Setting position = -center * scale on the root tries to centre the
+      //    bbox BEFORE rotation, but the rotation then flings the centre
+      //    off-origin. v1.18 had the manta rendering off-centre because of this.
+      //    Fix: shift the inner model so its bbox sits at LOCAL origin, then
+      //    wrap it in a Group that owns the scale/rotation/position. The Group's
+      //    rotation pivots cleanly around the model's geometric centre.
+      mantaModel.position.copy(center).negate();   // center the model in local space
 
-      // Diagonal pose; cursor offsets layered on in the tick loop.
+      manta = new THREE.Group();
+      manta.add(mantaModel);
+      manta.scale.setScalar(scale);
       manta.rotation.y = BASE_ROT_Y;
       manta.rotation.x = BASE_ROT_X;
 
-      // 3. v1.18 — Animations TEMPORARILY DISABLED for diagnostics.
-      //    Some swim animations translate the root or scale wildly,
-      //    which can throw the model off-screen even when auto-fit
-      //    is correct. Re-enable by uncommenting the block below
-      //    once we confirm static layout works.
-      const ENABLE_ANIMATIONS = false;
+      // 4. v1.19 — Animations re-enabled.
+      //    Mixer targets the inner mantaModel (the scene with the rig),
+      //    not the outer Group. The Group's transform is independent.
+      const ENABLE_ANIMATIONS = true;
       if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
-        mixer = new THREE.AnimationMixer(manta);
+        mixer = new THREE.AnimationMixer(mantaModel);
         for (const clip of gltf.animations) {
           mixer.clipAction(clip).play();
         }
@@ -377,7 +374,6 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
       scene.add(manta);
 
-      // v1.18 — verbose diagnostic logging.
       console.log("[Auros] GLTF loaded ─────────────────────────");
       console.log(`  meshes        : ${meshCount}`);
       console.log(`  skinned meshes: ${skinnedCount}`);
@@ -386,7 +382,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       console.log(`  longest axis  : ${longest.toFixed(3)}`);
       console.log(`  scale applied : ${scale.toFixed(6)}`);
       console.log(`  clip count    : ${gltf.animations?.length ?? 0}`);
-      console.log(`  animations    : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED for diagnostics"}`);
+      console.log(`  animations    : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED"}`);
       console.log("──────────────────────────────────────────────");
     },
     (xhr) => {
@@ -599,5 +595,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.18 — Defensive auto-fit + diagnostics (animations disabled) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.19 — Group wrapper centering fix + animations re-enabled · Three.js", THREE.REVISION);
 })();
