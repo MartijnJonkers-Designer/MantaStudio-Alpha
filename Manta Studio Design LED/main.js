@@ -324,6 +324,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     (gltf) => {
       const mantaModel = gltf.scene;
 
+      // v1.21 DIAGNOSTIC: dump the model's natural transforms BEFORE we touch anything.
+      console.log("[Auros] DIAG — mantaModel native transform:");
+      console.log("  position:", mantaModel.position.toArray());
+      console.log("  rotation:", mantaModel.rotation.toArray());
+      console.log("  scale   :", mantaModel.scale.toArray());
+
       // 1. Override every material with the shared glass.
       let meshCount = 0;
       let skinnedCount = 0;
@@ -337,41 +343,67 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         }
       });
 
-      // 2. Measure NATIVE bbox (model alone, no Group wrapper) to compute scale.
+      // v1.21 DIAGNOSTIC: list child mesh transforms inside the model.
+      let firstMeshInfo = null;
+      mantaModel.traverse((child) => {
+        if (!child.isMesh || firstMeshInfo) return;
+        child.updateMatrixWorld(true);
+        firstMeshInfo = {
+          name: child.name || "(unnamed)",
+          isSkinnedMesh: !!child.isSkinnedMesh,
+          worldMatrixElements: Array.from(child.matrixWorld.elements),
+        };
+      });
+      if (firstMeshInfo) {
+        console.log("[Auros] DIAG — first mesh:", firstMeshInfo.name, "skinned:", firstMeshInfo.isSkinnedMesh);
+        console.log("  worldMatrix elements (16):", firstMeshInfo.worldMatrixElements.map((v) => v.toFixed(3)).join(", "));
+      }
+
+      // 2. Measure NATIVE bbox.
       const nativeBbox = computeWorldBbox(mantaModel);
       const nativeSize = nativeBbox.getSize(new THREE.Vector3());
       const longest = Math.max(nativeSize.x, nativeSize.y, nativeSize.z);
 
-      let scale = 1.5 / longest;   // v1.20 — was 2.2; tighter target, accounts for 54° rotation
-      if (!isFinite(scale) || scale <= 0) {
-        console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { nativeSize, longest });
-        scale = 1.0;
+      // v1.21 DIAGNOSTIC: hardcoded scale to test whether scale even applies.
+      // Toggle USE_AUTOFIT to false to use HARDCODED_SCALE instead.
+      const USE_AUTOFIT       = false;       // v1.21 — false for diagnostic
+      const HARDCODED_SCALE   = 0.05;        // tiny, manta should be a small dot if applied
+      const AUTOFIT_TARGET    = 1.5;
+
+      let scale;
+      if (USE_AUTOFIT) {
+        scale = AUTOFIT_TARGET / longest;
+        if (!isFinite(scale) || scale <= 0) {
+          console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { nativeSize, longest });
+          scale = 1.0;
+        } else {
+          scale = Math.max(0.001, Math.min(scale, 1000));
+        }
       } else {
-        scale = Math.max(0.001, Math.min(scale, 1000));
+        scale = HARDCODED_SCALE;
+        console.warn("[Auros] DIAG — using HARDCODED_SCALE =", HARDCODED_SCALE, "(autofit bypassed)");
       }
 
-      // 3. v1.20 — ROBUST TWO-PASS PLACEMENT.
-      //    Don't fiddle with mantaModel.position. Wrap in Group, apply scale +
-      //    rotation, add to scene. Then measure the FINAL world-space bbox
-      //    (after all transforms in place) and shift the Group's position by
-      //    -worldCenter. This works regardless of what transforms are baked
-      //    into the GLB (root offsets, axis conversions, child node scales).
+      // 3. Group wrapper.
+      // v1.21 — also TEMPORARILY remove rotation to isolate scale/centering.
+      const USE_ROTATION = false;          // v1.21 — false for diagnostic
+
       manta = new THREE.Group();
       manta.add(mantaModel);
       manta.scale.setScalar(scale);
-      manta.rotation.y = BASE_ROT_Y;
-      manta.rotation.x = BASE_ROT_X;
+      if (USE_ROTATION) {
+        manta.rotation.y = BASE_ROT_Y;
+        manta.rotation.x = BASE_ROT_X;
+      }
       scene.add(manta);
 
-      // Compute world bbox AFTER scale + rotation in place, shift Group to centre.
       const worldBbox = computeWorldBbox(manta);
       const worldCenter = worldBbox.getCenter(new THREE.Vector3());
       const worldSize   = worldBbox.getSize(new THREE.Vector3());
-      manta.position.sub(worldCenter);   // place world bbox centre at origin
+      manta.position.sub(worldCenter);
 
-      // 4. Animations enabled. Mixer targets inner mantaModel (where the rig is),
-      //    not the outer Group, so Group transforms stay independent of rig.
-      const ENABLE_ANIMATIONS = true;
+      // 4. v1.21 DIAGNOSTIC: animations DISABLED.
+      const ENABLE_ANIMATIONS = false;
       if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(mantaModel);
         for (const clip of gltf.animations) {
@@ -384,12 +416,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       console.log(`  skinned meshes : ${skinnedCount}`);
       console.log(`  native bbox    : ${nativeSize.x.toFixed(3)} x ${nativeSize.y.toFixed(3)} x ${nativeSize.z.toFixed(3)}`);
       console.log(`  longest axis   : ${longest.toFixed(3)}`);
-      console.log(`  scale applied  : ${scale.toFixed(6)}`);
-      console.log(`  world bbox     : ${worldSize.x.toFixed(3)} x ${worldSize.y.toFixed(3)} x ${worldSize.z.toFixed(3)} (post-rotation)`);
+      console.log(`  scale applied  : ${scale.toFixed(6)} ${USE_AUTOFIT ? "(autofit)" : "(HARDCODED)"}`);
+      console.log(`  rotation       : ${USE_ROTATION ? "enabled" : "DISABLED for diag"}`);
+      console.log(`  world bbox     : ${worldSize.x.toFixed(3)} x ${worldSize.y.toFixed(3)} x ${worldSize.z.toFixed(3)}`);
       console.log(`  world center   : (${worldCenter.x.toFixed(3)}, ${worldCenter.y.toFixed(3)}, ${worldCenter.z.toFixed(3)}) -> shifted to origin`);
       console.log(`  clip count     : ${gltf.animations?.length ?? 0}`);
-      console.log(`  animations     : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED"}`);
+      console.log(`  animations     : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED for diag"}`);
       console.log("──────────────────────────────────────────────");
+
+      // v1.21 DIAGNOSTIC: dump the Group's final world matrix.
+      manta.updateMatrixWorld(true);
+      console.log("[Auros] DIAG — manta Group final world matrix:");
+      console.log("  position:", manta.position.toArray().map((v) => v.toFixed(3)));
+      console.log("  scale   :", manta.scale.toArray().map((v) => v.toFixed(3)));
+      console.log("  rotation:", manta.rotation.toArray().slice(0, 3).map((v) => v.toFixed(3)));
     },
     (xhr) => {
       if (xhr.lengthComputable) {
@@ -601,5 +641,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.20 — Robust two-pass placement + tighter framing + camera back · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.21 — DIAGNOSTIC: hardcoded scale 0.05, no rotation, no animation · Three.js", THREE.REVISION);
 })();
