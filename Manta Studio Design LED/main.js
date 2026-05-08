@@ -82,23 +82,23 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
         gl_Position = projectionMatrix * mvPos;
 
         // Size attenuated by distance from camera (further = smaller).
-        gl_PointSize = 4.5 * (1.0 / -mvPos.z);
+        gl_PointSize = 7.0 * (1.0 / -mvPos.z);   // v2.1 — was 4.5; bigger so they read
 
-        // Colour gradient based on local position.
-        // Top of body / wings -> bright white-cyan
-        // Bottom / shadow zones -> deeper lavender
-        vec3 highlight = vec3(1.00, 0.96, 1.00);   // bright white with violet tint
-        vec3 mid       = vec3(0.85, 0.80, 0.95);   // pale lavender
-        vec3 deep      = vec3(0.65, 0.60, 0.85);   // deep violet
+        // v2.1 — DARKER palette than the BG, so particles show as soft shadows
+        // and highlights against the pale pink-lavender field. The previous
+        // light palette + additive blending = white wash.
+        vec3 highlight = vec3(0.78, 0.72, 0.88);   // pale violet (only slightly darker than BG)
+        vec3 mid       = vec3(0.55, 0.48, 0.72);   // mid violet
+        vec3 deep      = vec3(0.35, 0.28, 0.50);   // deep violet (shadow areas)
 
-        float topT = smoothstep(-0.4, 0.4, position.y);     // top of body
-        float depthT = smoothstep(-0.5, 0.5, position.z);   // depth (front to back)
+        float topT = smoothstep(-0.4, 0.4, position.y);
+        float depthT = smoothstep(-0.5, 0.5, position.z);
 
         vec3 c1 = mix(deep, mid, depthT);
         vColor = mix(c1, highlight, topT * 0.7);
 
-        // Subtle alpha variation — front-facing particles slightly brighter
-        vAlpha = 0.55 + 0.35 * topT;
+        // v2.1 — solid alpha; with normal blending we don't need to fight transparency.
+        vAlpha = 0.85;
       }
     `,
     fragmentShader: `
@@ -106,7 +106,6 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
       varying float vAlpha;
 
       void main() {
-        // Soft circular point — alpha falls off from centre to edge
         vec2 uv = gl_PointCoord - 0.5;
         float dist = length(uv);
         if (dist > 0.5) discard;
@@ -116,8 +115,10 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
       }
     `,
     transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false                    // additive particles, no depth conflict
+    blending: THREE.NormalBlending,        // v2.1 — was AdditiveBlending; particles
+                                           // need to be DARKER than the light BG, so
+                                           // additive (which only ever brightens) is wrong.
+    depthWrite: false
   });
 
   /* ---------- Cursor ---------- */
@@ -166,26 +167,27 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
       const pointGeo = new THREE.BufferGeometry();
       pointGeo.setAttribute("position", new THREE.Float32BufferAttribute(dense, 3));
 
-      const points = new THREE.Points(pointGeo, particleMat);
-
-      // Auto-fit using the points' bounding box
+      // v2.1 — pre-centre the geometry vertices BEFORE wrapping. This makes
+      // rotation pivot cleanly around the geometric centre instead of relying
+      // on post-transform Box3 math (which was placing things wrong).
       pointGeo.computeBoundingBox();
-      const size = pointGeo.boundingBox.getSize(new THREE.Vector3());
-      const longest = Math.max(size.x, size.y, size.z);
+      const bbCenter = pointGeo.boundingBox.getCenter(new THREE.Vector3());
+      const bbSize   = pointGeo.boundingBox.getSize(new THREE.Vector3());
+      pointGeo.translate(-bbCenter.x, -bbCenter.y, -bbCenter.z);
+      pointGeo.computeBoundingBox();   // refresh after translate
+
+      const longest = Math.max(bbSize.x, bbSize.y, bbSize.z);
       const scale = 2.4 / longest;
+
+      const points = new THREE.Points(pointGeo, particleMat);
 
       manta = new THREE.Group();
       manta.add(points);
       manta.scale.setScalar(scale);
-      manta.rotation.y = 3 * Math.PI / 10;     // ~7-8 o'clock diagonal
+      manta.rotation.y = 3 * Math.PI / 10;
       manta.rotation.x = -0.05;
+      // No position.sub needed — geometry already centred.
       scene.add(manta);
-
-      // Centre after transforms
-      manta.updateMatrixWorld(true);
-      const wbox = new THREE.Box3().setFromObject(manta);
-      const wcenter = wbox.getCenter(new THREE.Vector3());
-      manta.position.sub(wcenter);
 
       console.log(`[Auros] particle manta loaded · scale=${scale.toFixed(3)} · final points=${dense.length / 3}`);
     },
@@ -221,5 +223,5 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
     renderer.setSize(window.innerWidth, window.innerHeight, false);
   });
 
-  console.log("[Auros] v2.0-prototype — Particle manta · Three.js", THREE.REVISION);
+  console.log("[Auros] v2.1-prototype — Particle manta (normal blending, dark palette, geom-centered) · Three.js", THREE.REVISION);
 })();
