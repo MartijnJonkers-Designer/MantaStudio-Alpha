@@ -403,8 +403,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const worldSize   = worldBbox.getSize(new THREE.Vector3());
       manta.position.sub(worldCenter);
 
-      // 4. Animations back on (v1.21 had off for isolation).
-      const ENABLE_ANIMATIONS = true;
+      // 4. v1.23 — animations OFF again (testing whether the swim cycle's
+      //    root-translation track is dragging the manta out of frame).
+      const ENABLE_ANIMATIONS = false;
       if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(mantaModel);
         for (const clip of gltf.animations) {
@@ -642,5 +643,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.22 — Manual scale 0.40 + rotation + animations back on · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.23 — Scale 0.40 + rotation ON + animations OFF (testing animation displacement) · Three.js", THREE.REVISION);
 })();
