@@ -1,35 +1,29 @@
 /* ============================================================
-   AUROS — GLTF Manta v1.7
+   AUROS v1.26 — Clean slate.
 
-   Switched off the procedural geometry. We now load a Sketchfab manta
-   ray GLTF model and override every mesh's material with our glass.
+   User: 'just get rid of the bloom and shaders. I just want to see
+   small interactive waves underneath or around the manta'.
 
-   Pipeline:
-   1. GLTFLoader fetches cartoon_manta_ray_animated.glb (~2 MB).
-   2. On load: traverse the scene tree, replace every material with
-      the shared glass MeshPhysicalMaterial, enable shadow casting.
-   3. Auto-fit: compute the model's bounding box, center it at origin,
-      scale so the longest axis is ~3 units (fits the camera framing).
-   4. If the GLB ships animation clips, hook them up to an
-      AnimationMixer driven from a delta clock in the tick loop.
+   Stripped from previous versions:
+   - EffectComposer / RenderPass / UnrealBloomPass / OutputPass
+   - Fresnel onBeforeCompile injection on the glass material
+   - Iridescence
+   - Vignette overlay div
+   - All HDR ripple band stuff
+   - All diagnostic noise
+   - Magnetic CTA (CTA is hidden anyway)
 
-   Kept from v1.6: scene background gradient, iridescent floor +
-   ripple texture, RectAreaLight key + shadow-casting DirectionalLight
-   + rim SpotLight + top-down pool SpotLight, magnetic CTA, no bloom.
-
-   Removed from v1.6: silhouette / midZ / thickness math,
-   buildMantaSurface, buildEdgeWall, makeHorn, makeTail, manual
-   sway animation (the GLB's own swim animation handles motion).
+   Kept (because they're the actual job):
+   - Cartoon manta GLB with auto-fit, glass material override, swim animation
+   - Cursor-driven small wave shader on the floor (this is the new BG)
+   - Cursor-driven manta tilt
+   - Direct renderer.render — no composer, no passes
    ============================================================ */
 
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
@@ -37,264 +31,149 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   RectAreaLightUniformsLib.init();
 
+  /* ---------- Scene ---------- */
   const scene = new THREE.Scene();
-
-  /* ============================================================
-     SCENE BACKGROUND — soft gradient
-     ============================================================ */
-  function makeBackgroundGradient() {
+  scene.background = (() => {
+    // Soft white-to-off-white vertical gradient.
     const c = document.createElement("canvas");
     c.width = 2; c.height = 512;
     const ctx = c.getContext("2d");
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
     grad.addColorStop(0.0, "#FFFFFF");
-    grad.addColorStop(1.0, "#FAFAFA");
+    grad.addColorStop(1.0, "#F5F5F8");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 2, 512);
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.SRGBColorSpace;
     return tex;
-  }
-  scene.background = makeBackgroundGradient();
+  })();
 
-  /* ============================================================
-     CAMERA — 3/4 top-down to match reference
-     ============================================================ */
+  /* ---------- Camera ---------- */
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 50);
-  camera.position.set(0.0, 1.1, 3.2);   // v1.25 — back to v1.16 framing for cartoon model
-  camera.lookAt(0.0, 0.00, 0.0);
+  camera.position.set(0.0, 1.1, 3.2);
+  camera.lookAt(0.0, 0.0, 0.0);
 
-  /* ============================================================
-     RENDERER
-     ============================================================ */
+  /* ---------- Renderer ---------- */
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.75;     // v1.12 — was 1.0; dim global ~25%
+  renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  // PMREM environment
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new RoomEnvironment();
-  scene.environment = pmrem.fromScene(envScene, 0.0).texture;
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.0).texture;
 
-  /* ============================================================
-     PROCEDURAL TEXTURES — ripples (floor) + fractures (manta normal)
-     ============================================================ */
-  // v1.11 — much more saturated bands, looser spacing, clearer cyan/lavender alternation
-  function makeRippleTexture() {
-    const size = 1024;
-    const c = document.createElement("canvas");
-    c.width = c.height = size;
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#F8FAFD";
-    ctx.fillRect(0, 0, size, size);
-    const cx = size * 0.5, cy = size * 0.5, maxR = size * 0.6;
-
-    // Dense fine rings — alpha 3x stronger, saturation pegged
-    for (let r = 4; r < maxR; r += 4) {
-      const t = r / maxR;
-      const hue = 185 + Math.sin(t * 6.0) * 75;     // sweeps 110 (cyan) <-> 260 (lavender)
-      const sat = 85;                                // was variable; now hard-pegged
-      const light = 72 + Math.sin(t * 18.0) * 6;
-      const alpha = 0.55 * (1.0 - t * 0.5);          // was 0.22 * ... = roughly 2.5x more opaque
-      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, ${sat}%, ${light.toFixed(1)}%, ${alpha.toFixed(3)})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Punchier highlight rings every 32px
-    for (let r = 18; r < maxR; r += 32) {
-      const t = r / maxR;
-      const hue = 195 + Math.sin(t * 3.5) * 65;
-      ctx.strokeStyle = `hsla(${hue.toFixed(1)}, 90%, 75%, ${(0.75 * (1.0 - t)).toFixed(3)})`;
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Soft edge fade so floor blends into BG
-    const edgeGrad = ctx.createRadialGradient(cx, cy, maxR * 0.65, cx, cy, size * 0.5);
-    edgeGrad.addColorStop(0.0, "rgba(255,255,255,0)");
-    edgeGrad.addColorStop(1.0, "rgba(255,255,255,1)");
-    ctx.fillStyle = edgeGrad;
-    ctx.fillRect(0, 0, size, size);
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    return tex;
-  }
-
-  function makeFractureNormalTexture() {
-    const size = 1024;
-    const c = document.createElement("canvas");
-    c.width = c.height = size;
-    const ctx = c.getContext("2d");
-
-    // Subtle base noise (less than v1.8)
-    const img = ctx.createImageData(size, size);
-    const d = img.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const nx = 128 + (Math.random() - 0.5) * 12;
-      const ny = 128 + (Math.random() - 0.5) * 12;
-      d[i] = nx; d[i+1] = ny; d[i+2] = 255; d[i+3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-
-    // v1.16 — even more dramatic cracks: more lines, longer, thicker, sharper.
-    ctx.lineCap = "round";
-    for (let i = 0; i < 50; i++) {
-      const r = 25 + Math.random() * 60;
-      const g = 25 + Math.random() * 60;
-      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.98)`;
-      ctx.lineWidth = 3 + Math.random() * 4;
-
-      const x0 = Math.random() * size;
-      const y0 = Math.random() * size;
-      const angle = Math.random() * Math.PI * 2;
-      const length = 350 + Math.random() * 600;
-      const x1 = x0 + Math.cos(angle) * length;
-      const y1 = y0 + Math.sin(angle) * length;
-
-      // Slight curvature via bezier control points along the angle.
-      const cx1 = x0 + Math.cos(angle) * length * 0.33 + (Math.random() - 0.5) * 80;
-      const cy1 = y0 + Math.sin(angle) * length * 0.33 + (Math.random() - 0.5) * 80;
-      const cx2 = x0 + Math.cos(angle) * length * 0.66 + (Math.random() - 0.5) * 80;
-      const cy2 = y0 + Math.sin(angle) * length * 0.66 + (Math.random() - 0.5) * 80;
-
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.bezierCurveTo(cx1, cy1, cx2, cy2, x1, y1);
-      ctx.stroke();
-
-      // 50% chance: a branching crack
-      if (Math.random() > 0.5) {
-        const t = 0.3 + Math.random() * 0.4;
-        const bx = x0 + (x1 - x0) * t;
-        const by = y0 + (y1 - y0) * t;
-        const bAng = angle + (Math.random() - 0.5) * 1.6;
-        const bLen = length * (0.25 + Math.random() * 0.2);
-        ctx.lineWidth = 1.5 + Math.random() * 1.5;
-        ctx.beginPath();
-        ctx.moveTo(bx, by);
-        ctx.lineTo(bx + Math.cos(bAng) * bLen, by + Math.sin(bAng) * bLen);
-        ctx.stroke();
-      }
-    }
-
-    // v1.16 — fine secondary cracks for density (hairline fractures filling gaps).
-    for (let i = 0; i < 120; i++) {
-      ctx.strokeStyle = `rgba(${(60 + Math.random() * 60)|0}, ${(60 + Math.random() * 60)|0}, 255, 0.45)`;
-      ctx.lineWidth = 0.5 + Math.random() * 1.0;
-      const x0 = Math.random() * size, y0 = Math.random() * size;
-      const angle = Math.random() * Math.PI * 2;
-      const length = 60 + Math.random() * 180;
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x0 + Math.cos(angle) * length, y0 + Math.sin(angle) * length);
-      ctx.stroke();
-    }
-
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.NoColorSpace;
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1.5, 1.5);
-    return tex;
-  }
-
-  const rippleMap      = makeRippleTexture();
-  const fractureNormal = makeFractureNormalTexture();
-
-  /* ============================================================
-     GLASS MATERIAL — applied to every mesh in the loaded GLTF
-     ============================================================ */
+  /* ---------- Glass material for the manta ---------- */
   const glassMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xFFFFFF,
     metalness: 0.0,
-    roughness: 0.0,
+    roughness: 0.05,
     transmission: 1.0,
-    ior: 1.65,
-    thickness: 6.0,                              // v1.14 — was 4.0; more cyan absorption depth
-    envMapIntensity: 2.0,
-    attenuationDistance: 0.4,
-    attenuationColor: new THREE.Color(0x3FA0E5), // v1.14 — was 0x70BFFF; much deeper cyan-blue
+    ior: 1.5,
+    thickness: 1.5,
+    envMapIntensity: 1.5,
+    attenuationDistance: 1.5,
+    attenuationColor: new THREE.Color(0xC0E8FF),
     transparent: true,
-    side: THREE.DoubleSide,
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.04,
-    iridescence: 0.5,                            // v1.16 — was 0.3; stronger color shifts
-    iridescenceIOR: 1.3,
-    iridescenceThicknessRange: [100, 400],
-    normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(2.2, 2.2),    // v1.16 — was 1.5; cracks pop hard
-    clearcoatNormalMap: fractureNormal,          // v1.16 — added; cracks also distort the gloss layer
-    clearcoatNormalScale: new THREE.Vector2(1.5, 1.5)
+    side: THREE.DoubleSide
   });
 
-  // v1.14 — Fresnel-darkening shader injection.
-  // Multiplies the final fragment color by a dark cyan tint at glancing
-  // angles to simulate total internal reflection at silhouette edges.
-  // Uses standard view-space varyings (vNormal, vViewPosition).
-  const fresnelUniforms = {
-    fresnelPower:    { value: 2.5 },
-    fresnelStrength: { value: 0.45 },
-    fresnelTint:     { value: new THREE.Color(0x1A4880) }   // dark blue
-  };
-  glassMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.fresnelPower    = fresnelUniforms.fresnelPower;
-    shader.uniforms.fresnelStrength = fresnelUniforms.fresnelStrength;
-    shader.uniforms.fresnelTint     = fresnelUniforms.fresnelTint;
+  /* ---------- Floor: small interactive waves via vertex displacement ----------
+     Plane subdivided 128x128 so the vertex shader has resolution to push.
+     Cursor sets the wave origin. Time animates them outward. Layered sin
+     waves at three frequencies give a natural water-ripple feel. Brightness
+     is faked from vertex height so crests look lighter, troughs darker —
+     no real lighting needed.
+     -------------------------------------------------------------------- */
+  const floorGeo = new THREE.PlaneGeometry(20, 20, 128, 128);
+  const floorMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:  { value: 0 },
+      uMouse: { value: new THREE.Vector2(0, 0) }
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      varying float vHeight;
+      uniform float uTime;
+      uniform vec2  uMouse;
 
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <common>",
-      `#include <common>
-       uniform float fresnelPower;
-       uniform float fresnelStrength;
-       uniform vec3  fresnelTint;`
-    );
+      void main() {
+        vUv = uv;
+        vec3 pos = position;
 
-    // Inject just before the colorspace conversion: at this point gl_FragColor
-    // has the full transmission + clearcoat + iridescence result. We modulate it.
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <colorspace_fragment>",
-      `float fresnelTerm = pow(
-         1.0 - clamp(abs(dot(normalize(vNormal), normalize(vViewPosition))), 0.0, 1.0),
-         fresnelPower
-       );
-       vec3 fresnelMul = mix(vec3(1.0), fresnelTint, fresnelTerm * fresnelStrength);
-       gl_FragColor.rgb *= fresnelMul;
-       #include <colorspace_fragment>`
-    );
-  };
+        // Wave origin follows cursor (clamped to small UV offset)
+        vec2 center = vec2(0.5) + uMouse * 0.10;
+        float dist = length(uv - center);
 
-  /* ============================================================
-     LOAD THE MANTA GLTF
-     ============================================================ */
-  let manta = null;             // outer Group (transforms applied here)
-  let mantaModel = null;        // inner GLTF scene (animations applied here)
-  let mixer = null;             // animation mixer
+        // Three layered sin waves — different frequencies and decay rates.
+        // Negative time coefficient => waves travel OUTWARD from origin.
+        // exp(-dist * k) decays amplitude with distance so the ripples
+        // are concentrated near the cursor, fading at the edges.
+        float wave = 0.0;
+        wave += sin(dist * 35.0 - uTime * 2.5) * exp(-dist * 4.0) * 0.030;
+        wave += sin(dist * 22.0 - uTime * 1.7) * exp(-dist * 3.0) * 0.020;
+        wave += sin(dist * 50.0 - uTime * 3.2) * exp(-dist * 5.0) * 0.012;
 
-  // v1.24 — root pin: snapshot mantaModel's natural transform at load time so
-  // we can reset it every frame after the mixer animates. This kills any
-  // root-translation track in the swim cycle (which was pushing the manta
-  // through the camera) without breaking the skeletal bone animation.
-  const mantaModelOrigPos   = new THREE.Vector3();
-  const mantaModelOrigQuat  = new THREE.Quaternion();
-  const mantaModelOrigScale = new THREE.Vector3();
+        pos.z += wave;
+        vHeight = wave;
 
-  const clock = new THREE.Clock();
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vUv;
+      varying float vHeight;
 
-  // v1.15 — cursor tracking. mouse is in normalized device space [-1, +1].
-  // smoothMouse is the eased version we feed to manta rotation + floor shader.
+      void main() {
+        vec3 baseColor = vec3(0.94, 0.95, 0.97);
+
+        // Crest -> brighter, trough -> darker. Fakes lighting on the surface.
+        float t = smoothstep(-0.025, 0.025, vHeight);
+        vec3 color = mix(baseColor * 0.88, baseColor * 1.06, t);
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+    side: THREE.DoubleSide
+  });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -1.2;
+  scene.add(floor);
+
+  /* ---------- Lighting ---------- */
+  scene.add(new THREE.AmbientLight(0xFFFFFF, 0.4));
+
+  const keyLight = new THREE.RectAreaLight(0xFFFFFF, 6.0, 4.0, 1.0);
+  keyLight.position.set(1, 3, 2);
+  keyLight.lookAt(0, 0, 0);
+  scene.add(keyLight);
+
+  const shadowLight = new THREE.DirectionalLight(0xFFFFFF, 0.5);
+  shadowLight.position.set(1, 3, 2);
+  shadowLight.target.position.set(0, 0, 0);
+  shadowLight.castShadow = true;
+  shadowLight.shadow.mapSize.set(1024, 1024);
+  shadowLight.shadow.camera.left = -3; shadowLight.shadow.camera.right = 3;
+  shadowLight.shadow.camera.top = 3;   shadowLight.shadow.camera.bottom = -3;
+  shadowLight.shadow.camera.near = 0.1; shadowLight.shadow.camera.far = 20;
+  shadowLight.shadow.bias = -0.0005;
+  shadowLight.shadow.radius = 4;
+  scene.add(shadowLight);
+  scene.add(shadowLight.target);
+
+  const rimLight = new THREE.SpotLight(0xFFFFFF, 8.0);
+  rimLight.position.set(-2, 2, -2);
+  rimLight.target.position.set(0, 0, 0);
+  scene.add(rimLight.target);
+  scene.add(rimLight);
+
+  /* ---------- Cursor state ---------- */
   const mouse       = new THREE.Vector2(0, 0);
   const smoothMouse = new THREE.Vector2(0, 0);
-  const BASE_ROT_Y  = 3 * Math.PI / 10;     // from v1.10 — the diagonal pose
+  const BASE_ROT_Y  = 3 * Math.PI / 10;
   const BASE_ROT_X  = -0.05;
 
   window.addEventListener("pointermove", (e) => {
@@ -302,370 +181,83 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     mouse.y = -((e.clientY / window.innerHeight) * 2 - 1);
   }, { passive: true });
 
-  // v1.20 — helper: traverse a root and union all isMesh world-space bboxes.
-  // Robust to skinned meshes (calls computeBoundingBox so bones are respected).
-  function computeWorldBbox(root) {
-    root.updateMatrixWorld(true);
-    const bbox = new THREE.Box3();
-    root.traverse((child) => {
-      if (!child.isMesh) return;
-      if (child.isSkinnedMesh && typeof child.computeBoundingBox === "function") {
-        child.computeBoundingBox();
-        if (child.boundingBox) {
-          const b = child.boundingBox.clone();
-          b.applyMatrix4(child.matrixWorld);
-          bbox.union(b);
-          return;
-        }
-      }
-      if (child.geometry) {
-        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
-        const b = child.geometry.boundingBox.clone();
-        b.applyMatrix4(child.matrixWorld);
-        bbox.union(b);
-      }
-    });
-    return bbox;
-  }
+  /* ---------- Manta load ---------- */
+  let manta = null;
+  let mixer = null;
+  const clock = new THREE.Clock();
 
   const loader = new GLTFLoader();
   loader.load(
-    "cartoon_manta_ray_animated.glb",   // v1.25 — back to cartoon while we focus on BG
+    "cartoon_manta_ray_animated.glb",
     (gltf) => {
-      mantaModel = gltf.scene;
+      const mantaModel = gltf.scene;
 
-      // v1.24 — snapshot the natural root transform BEFORE we touch anything.
-      mantaModelOrigPos.copy(mantaModel.position);
-      mantaModelOrigQuat.copy(mantaModel.quaternion);
-      mantaModelOrigScale.copy(mantaModel.scale);
-
-      // v1.21 DIAGNOSTIC: dump the model's natural transforms BEFORE we touch anything.
-      console.log("[Auros] DIAG — mantaModel native transform:");
-      console.log("  position:", mantaModel.position.toArray());
-      console.log("  rotation:", mantaModel.rotation.toArray());
-      console.log("  scale   :", mantaModel.scale.toArray());
-
-      // 1. Override every material with the shared glass.
-      let meshCount = 0;
-      let skinnedCount = 0;
+      // Override material on every mesh.
       mantaModel.traverse((child) => {
         if (child.isMesh) {
           child.material = glassMaterial;
           child.castShadow = true;
-          child.receiveShadow = false;
-          meshCount++;
-          if (child.isSkinnedMesh) skinnedCount++;
         }
       });
 
-      // v1.21 DIAGNOSTIC: list child mesh transforms inside the model.
-      let firstMeshInfo = null;
-      mantaModel.traverse((child) => {
-        if (!child.isMesh || firstMeshInfo) return;
-        child.updateMatrixWorld(true);
-        firstMeshInfo = {
-          name: child.name || "(unnamed)",
-          isSkinnedMesh: !!child.isSkinnedMesh,
-          worldMatrixElements: Array.from(child.matrixWorld.elements),
-        };
-      });
-      if (firstMeshInfo) {
-        console.log("[Auros] DIAG — first mesh:", firstMeshInfo.name, "skinned:", firstMeshInfo.isSkinnedMesh);
-        console.log("  worldMatrix elements (16):", firstMeshInfo.worldMatrixElements.map((v) => v.toFixed(3)).join(", "));
-      }
+      // Auto-fit. Cartoon model is well-behaved — Box3.setFromObject works.
+      const bbox = new THREE.Box3().setFromObject(mantaModel);
+      const size = bbox.getSize(new THREE.Vector3());
+      const longest = Math.max(size.x, size.y, size.z);
+      const scale = 2.2 / longest;
 
-      // 2. Measure NATIVE bbox.
-      const nativeBbox = computeWorldBbox(mantaModel);
-      const nativeSize = nativeBbox.getSize(new THREE.Vector3());
-      const longest = Math.max(nativeSize.x, nativeSize.y, nativeSize.z);
-
-      // v1.25 — back to cartoon model, autofit re-enabled (cartoon was well-behaved).
-      const USE_AUTOFIT       = true;
-      const HARDCODED_SCALE   = 0.50;
-      const AUTOFIT_TARGET    = 2.2;      // v1.16's value that worked for cartoon
-
-      let scale;
-      if (USE_AUTOFIT) {
-        scale = AUTOFIT_TARGET / longest;
-        if (!isFinite(scale) || scale <= 0) {
-          console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { nativeSize, longest });
-          scale = 1.0;
-        } else {
-          scale = Math.max(0.001, Math.min(scale, 1000));
-        }
-      } else {
-        scale = HARDCODED_SCALE;
-        console.warn("[Auros] DIAG — using HARDCODED_SCALE =", HARDCODED_SCALE, "(autofit bypassed)");
-      }
-
-      // 3. Group wrapper. Rotation back on (v1.21 had it off for isolation).
-      const USE_ROTATION = true;
-
+      // Wrap in Group, scale + rotate, then post-shift to centre.
       manta = new THREE.Group();
       manta.add(mantaModel);
       manta.scale.setScalar(scale);
-      if (USE_ROTATION) {
-        manta.rotation.y = BASE_ROT_Y;
-        manta.rotation.x = BASE_ROT_X;
-      }
+      manta.rotation.y = BASE_ROT_Y;
+      manta.rotation.x = BASE_ROT_X;
       scene.add(manta);
 
-      const worldBbox = computeWorldBbox(manta);
+      manta.updateMatrixWorld(true);
+      const worldBbox = new THREE.Box3().setFromObject(manta);
       const worldCenter = worldBbox.getCenter(new THREE.Vector3());
-      const worldSize   = worldBbox.getSize(new THREE.Vector3());
       manta.position.sub(worldCenter);
 
-      // 4. v1.24 — animations BACK ON, but the tick loop pins mantaModel's
-      //    root transform every frame. Bones still animate (skeletal swim
-      //    cycle plays); only the root translation track is neutralised.
-      const ENABLE_ANIMATIONS = true;
-      if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
+      // Animation.
+      if (gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(mantaModel);
-        for (const clip of gltf.animations) {
-          mixer.clipAction(clip).play();
-        }
+        for (const clip of gltf.animations) mixer.clipAction(clip).play();
       }
 
-      console.log("[Auros] GLTF loaded ─────────────────────────");
-      console.log(`  meshes         : ${meshCount}`);
-      console.log(`  skinned meshes : ${skinnedCount}`);
-      console.log(`  native bbox    : ${nativeSize.x.toFixed(3)} x ${nativeSize.y.toFixed(3)} x ${nativeSize.z.toFixed(3)}`);
-      console.log(`  longest axis   : ${longest.toFixed(3)}`);
-      console.log(`  scale applied  : ${scale.toFixed(6)} ${USE_AUTOFIT ? "(autofit)" : "(HARDCODED)"}`);
-      console.log(`  rotation       : ${USE_ROTATION ? "enabled" : "DISABLED for diag"}`);
-      console.log(`  world bbox     : ${worldSize.x.toFixed(3)} x ${worldSize.y.toFixed(3)} x ${worldSize.z.toFixed(3)}`);
-      console.log(`  world center   : (${worldCenter.x.toFixed(3)}, ${worldCenter.y.toFixed(3)}, ${worldCenter.z.toFixed(3)}) -> shifted to origin`);
-      console.log(`  clip count     : ${gltf.animations?.length ?? 0}`);
-      console.log(`  animations     : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED for diag"}`);
-      console.log("──────────────────────────────────────────────");
-
-      // v1.21 DIAGNOSTIC: dump the Group's final world matrix.
-      manta.updateMatrixWorld(true);
-      console.log("[Auros] DIAG — manta Group final world matrix:");
-      console.log("  position:", manta.position.toArray().map((v) => v.toFixed(3)));
-      console.log("  scale   :", manta.scale.toArray().map((v) => v.toFixed(3)));
-      console.log("  rotation:", manta.rotation.toArray().slice(0, 3).map((v) => v.toFixed(3)));
+      console.log(`[Auros] manta loaded · scale=${scale.toFixed(3)} · clips=${gltf.animations?.length ?? 0}`);
     },
-    (xhr) => {
-      if (xhr.lengthComputable) {
-        const pct = (xhr.loaded / xhr.total * 100).toFixed(0);
-        console.log(`[Auros] GLTF loading: ${pct}%`);
-      }
-    },
-    (err) => {
-      console.error("[Auros] GLTF load failed:", err);
-    }
+    undefined,
+    (err) => console.error("[Auros] GLTF load failed:", err)
   );
 
-  /* ============================================================
-     FLOOR — animated ShaderMaterial with real moving ripples
-     v1.14 — replaced static CanvasTexture with a ShaderMaterial.
-     uTime drives concentric sin-wave bands expanding outward, with
-     hue cycling between cyan and lavender. No more dead pixels.
-     ============================================================ */
-  const floorGeo = new THREE.PlaneGeometry(20, 20, 1, 1);
-  const floorMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime:  { value: 0 },
-      uMouse: { value: new THREE.Vector2(0, 0) }   // v1.15 — cursor-driven ripple center
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      varying vec2 vUv;
-      uniform float uTime;
-      uniform vec2  uMouse;
-
-      void main() {
-        // Ripple origin shifts toward cursor.
-        vec2 center = vec2(0.5) + uMouse * 0.15;
-        vec2 offset = vUv - center;
-        float dist = length(offset);
-
-        // Wider fade window so the ripple field reaches further before fading.
-        float fade = 1.0 - smoothstep(0.12, 0.50, dist);
-
-        // v1.16 — much LOOSER ripple frequencies. Reference has soft, wide,
-        // diffuse bands, not tight rings. Frequencies cut by ~3x.
-        float w1 = sin(dist * 12.0 - uTime * 0.85);
-        float w2 = sin(dist *  8.0 - uTime * 0.50);
-        float w3 = sin(dist * 18.0 - uTime * 1.10);
-        float ripple = (w1 * 0.5 + w2 * 0.3 + w3 * 0.2);
-
-        // Color cycles between cyan and lavender along radius and time.
-        float hueT = sin(dist * 3.0 - uTime * 0.30) * 0.5 + 0.5;
-
-        // v1.16 — HDR pastel palette. Peak channel values exceed bloom
-        // threshold (1.10) so the bright bands GLOW, while the off-white
-        // BG (linear ~1.0) sits below threshold and stays clean.
-        // After ACES tone mapping + exposure 0.75, these compress to
-        // soft luminous pastels matching the reference glow.
-        vec3 cyan     = vec3(0.95, 1.55, 1.50);   // bright turquoise glow
-        vec3 lavender = vec3(1.50, 1.10, 1.55);   // bright pink-violet glow
-        vec3 bandColor = mix(cyan, lavender, hueT);
-
-        // Off-white base sits below bloom threshold so it never glows.
-        vec3 base = vec3(0.96, 0.97, 0.99);
-
-        // Alpha curve — softer ramp so band edges blur into BG (matches
-        // the reference's diffuse, non-edged ripple feel).
-        float bandStrength = (ripple * 0.5 + 0.5);
-        bandStrength = pow(bandStrength, 1.4);   // softer falloff
-        float alpha = bandStrength * fade * 0.95;
-
-        vec3 finalColor = mix(base, bandColor, alpha);
-        gl_FragColor = vec4(finalColor, 1.0);
-      }
-    `,
-    side: THREE.DoubleSide
-  });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -1.4;
-  // Note: ShaderMaterial doesn't auto-receive shadows — pool light
-  // shadow on floor is sacrificed for moving ripples. Trade looks
-  // good in practice because the ripples themselves dominate the
-  // floor visual.
-  scene.add(floor);
-
-  /* ============================================================
-     LIGHTING
-     ============================================================ */
-  scene.add(new THREE.AmbientLight(0xFFFFFF, 0.3));
-
-  const keyLight = new THREE.RectAreaLight(0xFFFFFF, 12.0, 4.0, 1.0);   // v1.13 — was 8.0; punchier dorsal hot-spots
-  keyLight.position.set(1, 3, 2);
-  keyLight.lookAt(0, 0, 0);
-  scene.add(keyLight);
-
-  const shadowLight = new THREE.DirectionalLight(0xFFFFFF, 0.6);
-  shadowLight.position.set(1, 3, 2);
-  shadowLight.target.position.set(0, 0, 0);
-  shadowLight.castShadow = true;
-  shadowLight.shadow.mapSize.set(2048, 2048);
-  shadowLight.shadow.camera.left = -3; shadowLight.shadow.camera.right = 3;
-  shadowLight.shadow.camera.top = 3;   shadowLight.shadow.camera.bottom = -3;
-  shadowLight.shadow.camera.near = 0.1; shadowLight.shadow.camera.far = 20;
-  shadowLight.shadow.bias = -0.0005;    shadowLight.shadow.radius = 4;
-  scene.add(shadowLight);
-  scene.add(shadowLight.target);
-
-  const rimLight = new THREE.SpotLight(0xFFFFFF, 10.0);
-  rimLight.position.set(-2, 2, -2);
-  rimLight.target.position.set(0, 0, 0);
-  scene.add(rimLight.target);
-  scene.add(rimLight);
-
-  const poolLight = new THREE.SpotLight(0xFFFFFF, 60.0, 8.0, Math.PI / 7, 0.55, 1.4);
-  poolLight.position.set(0, 4.0, 0);
-  poolLight.target.position.set(0, -1.4, 0);
-  scene.add(poolLight.target);
-  scene.add(poolLight);
-
-  /* ============================================================
-     POST-PROCESSING — selective bloom on highlights only
-     v1.11 — back from v1.5+ era, but tuned much tighter:
-     threshold 1.05 keeps the off-white BG well below threshold,
-     so only specular hot-spots and cyan attenuation peaks bloom.
-     ============================================================ */
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  composer.setSize(window.innerWidth, window.innerHeight);
-  composer.addPass(new RenderPass(scene, camera));
-
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.55,   // v1.16 — was 0.25; ripples need real glow now
-    0.85,   // v1.16 — was 0.6; wider, softer halo
-    1.10    // v1.16 — was 1.25; HDR floor ripples (peak ~1.55) cross,
-            // off-white BG (linear ~1.0) sits below
-  );
-  composer.addPass(bloomPass);
-  composer.addPass(new OutputPass());
-
-  /* ============================================================
-     Tick loop — drive animation mixer if present, then composer
-     ============================================================ */
+  /* ---------- Tick loop ---------- */
   function tick() {
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
 
-    // v1.24 — ROOT PIN. Reset mantaModel's root transform every frame so
-    // the swim animation's translation track can't drag the manta off-screen.
-    // Bones (skeletal animation) are independent of the root node and continue
-    // to animate normally; only the root's position/rotation/scale tracks are
-    // neutralised. This is what keeps the manta swimming in place.
-    if (mantaModel) {
-      mantaModel.position.copy(mantaModelOrigPos);
-      mantaModel.quaternion.copy(mantaModelOrigQuat);
-      mantaModel.scale.copy(mantaModelOrigScale);
-    }
-
-    // v1.15 — cursor smoothing + propagation to manta and floor.
     smoothMouse.x += (mouse.x - smoothMouse.x) * 0.06;
     smoothMouse.y += (mouse.y - smoothMouse.y) * 0.06;
 
     if (manta) {
-      // Subtle rotation offsets — manta tilts toward cursor.
       manta.rotation.y = BASE_ROT_Y + smoothMouse.x * 0.18;
       manta.rotation.x = BASE_ROT_X + smoothMouse.y * 0.12;
     }
 
-    floorMat.uniforms.uTime.value  = clock.elapsedTime;
-    floorMat.uniforms.uMouse.value.copy(smoothMouse);   // ripple center follows cursor
+    floorMat.uniforms.uTime.value = clock.elapsedTime;
+    floorMat.uniforms.uMouse.value.copy(smoothMouse);
 
-    composer.render();
+    renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 
-  /* ============================================================
-     Resize
-     ============================================================ */
+  /* ---------- Resize ---------- */
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight, false);
-    composer.setSize(window.innerWidth, window.innerHeight);
-    bloomPass.setSize(window.innerWidth, window.innerHeight);
   });
 
-  /* ============================================================
-     Magnetic CTA (preserved)
-     ============================================================ */
-  const cta = document.getElementById("cta");
-  if (cta) {
-    const RADIUS = 100;
-    const STRENGTH = 0.40;
-
-    window.addEventListener("pointermove", (e) => {
-      const rect = cta.getBoundingClientRect();
-      const cx = rect.left + rect.width  * 0.5;
-      const cy = rect.top  + rect.height * 0.5;
-      const dx = e.clientX - cx;
-      const dy = e.clientY - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < RADIUS) {
-        const pull = 1.0 - dist / RADIUS;
-        const ox = dx * pull * STRENGTH;
-        const oy = dy * pull * STRENGTH;
-        cta.style.transform =
-          `translate(calc(-50% + ${ox.toFixed(2)}px), ${oy.toFixed(2)}px)`;
-      } else {
-        cta.style.transform = "translate(-50%, 0)";
-      }
-    }, { passive: true });
-
-    cta.addEventListener("click", () => {
-      console.log("[Auros] CTA clicked — REQUEST BRIEFING");
-    });
-  }
-
-  console.log("[Auros] v1.25 — Cartoon model restored, focus on background · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.26 — Clean slate, small interactive waves, no bloom · Three.js", THREE.REVISION);
 })();
