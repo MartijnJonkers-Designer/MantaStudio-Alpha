@@ -61,8 +61,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      CAMERA — 3/4 top-down to match reference
      ============================================================ */
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 50);
-  camera.position.set(0.0, 1.8, 3.2);
-  camera.lookAt(0.0, -0.05, 0.0);
+  camera.position.set(0.0, 1.1, 3.2);   // v1.16 — was (0, 1.8, 3.2); less steep, more from-front
+  camera.lookAt(0.0, 0.00, 0.0);
 
   /* ============================================================
      RENDERER
@@ -147,19 +147,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     }
     ctx.putImageData(img, 0, 0);
 
-    // Long, mostly-straight ice fractures with strong off-axis normals.
-    // alpha 0.95 (was 0.50), width 2-5 (was 1-2.5).
+    // v1.16 — even more dramatic cracks: more lines, longer, thicker, sharper.
     ctx.lineCap = "round";
-    for (let i = 0; i < 30; i++) {
-      const r = 30 + Math.random() * 80;
-      const g = 30 + Math.random() * 80;
-      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.95)`;
-      ctx.lineWidth = 2 + Math.random() * 3;
+    for (let i = 0; i < 50; i++) {
+      const r = 25 + Math.random() * 60;
+      const g = 25 + Math.random() * 60;
+      ctx.strokeStyle = `rgba(${r|0}, ${g|0}, 255, 0.98)`;
+      ctx.lineWidth = 3 + Math.random() * 4;
 
       const x0 = Math.random() * size;
       const y0 = Math.random() * size;
       const angle = Math.random() * Math.PI * 2;
-      const length = 250 + Math.random() * 500;
+      const length = 350 + Math.random() * 600;
       const x1 = x0 + Math.cos(angle) * length;
       const y1 = y0 + Math.sin(angle) * length;
 
@@ -189,6 +188,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       }
     }
 
+    // v1.16 — fine secondary cracks for density (hairline fractures filling gaps).
+    for (let i = 0; i < 120; i++) {
+      ctx.strokeStyle = `rgba(${(60 + Math.random() * 60)|0}, ${(60 + Math.random() * 60)|0}, 255, 0.45)`;
+      ctx.lineWidth = 0.5 + Math.random() * 1.0;
+      const x0 = Math.random() * size, y0 = Math.random() * size;
+      const angle = Math.random() * Math.PI * 2;
+      const length = 60 + Math.random() * 180;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x0 + Math.cos(angle) * length, y0 + Math.sin(angle) * length);
+      ctx.stroke();
+    }
+
     const tex = new THREE.CanvasTexture(c);
     tex.colorSpace = THREE.NoColorSpace;
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -216,11 +228,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     side: THREE.DoubleSide,
     clearcoat: 0.5,
     clearcoatRoughness: 0.04,
-    iridescence: 0.3,                            // v1.14 — added; subtle blue-pink shifts at angles
+    iridescence: 0.5,                            // v1.16 — was 0.3; stronger color shifts
     iridescenceIOR: 1.3,
     iridescenceThicknessRange: [100, 400],
     normalMap: fractureNormal,
-    normalScale: new THREE.Vector2(1.5, 1.5)
+    normalScale: new THREE.Vector2(2.2, 2.2),    // v1.16 — was 1.5; cracks pop hard
+    clearcoatNormalMap: fractureNormal,          // v1.16 — added; cracks also distort the gloss layer
+    clearcoatNormalScale: new THREE.Vector2(1.5, 1.5)
   });
 
   // v1.14 — Fresnel-darkening shader injection.
@@ -302,7 +316,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const size = bbox.getSize(new THREE.Vector3());
       const center = bbox.getCenter(new THREE.Vector3());
       const longest = Math.max(size.x, size.y, size.z);
-      const scale = 2.0 / longest;
+      const scale = 2.2 / longest;   // v1.16 — was 2.0; slightly larger in frame
       manta.position.sub(center.multiplyScalar(scale));
       manta.scale.setScalar(scale);
 
@@ -363,42 +377,42 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
       void main() {
         // Ripple origin shifts toward cursor.
-        // uMouse is in screen-space [-1, +1], we map it to a small UV offset
-        // so the ripple center moves with the cursor without leaving the plane.
-        vec2 center = vec2(0.5) + uMouse * 0.18;
+        vec2 center = vec2(0.5) + uMouse * 0.15;
         vec2 offset = vUv - center;
         float dist = length(offset);
 
-        // v1.15 BUG FIX: smoothstep(edge0, edge1, x) is undefined when
-        // edge0 >= edge1. v1.14 used smoothstep(0.45, 0.10, dist) which
-        // killed the ripples almost everywhere on screen. Correct form:
-        //   1.0 - smoothstep(0.10, 0.45, dist)
-        // -> fade = 1 near center, 0 far from center.
-        float fade = 1.0 - smoothstep(0.10, 0.45, dist);
+        // Wider fade window so the ripple field reaches further before fading.
+        float fade = 1.0 - smoothstep(0.12, 0.50, dist);
 
-        // Wider rings — frequencies cut roughly in half so the bands are
-        // ~2x wider and read more like the reference's broad gradient bands.
-        float w1 = sin(dist * 35.0 - uTime * 1.2);
-        float w2 = sin(dist * 22.0 - uTime * 0.7);
-        float w3 = sin(dist * 52.0 - uTime * 1.6);
+        // v1.16 — much LOOSER ripple frequencies. Reference has soft, wide,
+        // diffuse bands, not tight rings. Frequencies cut by ~3x.
+        float w1 = sin(dist * 12.0 - uTime * 0.85);
+        float w2 = sin(dist *  8.0 - uTime * 0.50);
+        float w3 = sin(dist * 18.0 - uTime * 1.10);
         float ripple = (w1 * 0.5 + w2 * 0.3 + w3 * 0.2);
 
-        // v1.15 — palette pulled directly from the reference image:
-        //   cyan band:     pale turquoise, slightly green-shifted, bright
-        //   lavender band: pale pink-violet, warm undertone, bright
-        // Both are pastels with high luminance, NOT deep saturated.
-        float hueT = sin(dist * 4.5 - uTime * 0.4) * 0.5 + 0.5;
-        vec3 cyan     = vec3(0.55, 0.94, 0.92);
-        vec3 lavender = vec3(0.92, 0.76, 0.91);
+        // Color cycles between cyan and lavender along radius and time.
+        float hueT = sin(dist * 3.0 - uTime * 0.30) * 0.5 + 0.5;
+
+        // v1.16 — HDR pastel palette. Peak channel values exceed bloom
+        // threshold (1.10) so the bright bands GLOW, while the off-white
+        // BG (linear ~1.0) sits below threshold and stays clean.
+        // After ACES tone mapping + exposure 0.75, these compress to
+        // soft luminous pastels matching the reference glow.
+        vec3 cyan     = vec3(0.95, 1.55, 1.50);   // bright turquoise glow
+        vec3 lavender = vec3(1.50, 1.10, 1.55);   // bright pink-violet glow
         vec3 bandColor = mix(cyan, lavender, hueT);
 
-        // Off-white base — matches the reference BG/floor seam color.
+        // Off-white base sits below bloom threshold so it never glows.
         vec3 base = vec3(0.96, 0.97, 0.99);
 
-        // Bumped 0.45 -> 0.85 so the bands actually read.
-        float alpha = (ripple * 0.5 + 0.5) * fade * 0.85;
-        vec3 finalColor = mix(base, bandColor, alpha);
+        // Alpha curve — softer ramp so band edges blur into BG (matches
+        // the reference's diffuse, non-edged ripple feel).
+        float bandStrength = (ripple * 0.5 + 0.5);
+        bandStrength = pow(bandStrength, 1.4);   // softer falloff
+        float alpha = bandStrength * fade * 0.95;
 
+        vec3 finalColor = mix(base, bandColor, alpha);
         gl_FragColor = vec4(finalColor, 1.0);
       }
     `,
@@ -460,9 +474,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.25,   // v1.13 — was 0.15; bloom now reads above noise floor
-    0.6,    // radius
-    1.25    // threshold preserved — only brightest pixels qualify
+    0.55,   // v1.16 — was 0.25; ripples need real glow now
+    0.85,   // v1.16 — was 0.6; wider, softer halo
+    1.10    // v1.16 — was 1.25; HDR floor ripples (peak ~1.55) cross,
+            // off-white BG (linear ~1.0) sits below
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -535,5 +550,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.15 — Floor shader bug fix + reference palette + cursor interactivity · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.16 — Hero shot pass: HDR ripples + bloom-glow + dramatic cracks + camera + vignette · Three.js", THREE.REVISION);
 })();

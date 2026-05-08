@@ -99,6 +99,23 @@
     .cta:active {
       transform: translate(-50%, 1px) scale(0.98);
     }
+
+    /* v1.16 — hero shot: hide all overlay text */
+    .hud, .cta { display: none !important; }
+
+    /* v1.16 — subtle vignette overlay so corners sit slightly cooler than center */
+    .vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+      background: radial-gradient(
+        ellipse at center,
+        rgba(255, 255, 255, 0)    35%,
+        rgba(220, 222, 232, 0.18) 75%,
+        rgba(200, 205, 220, 0.32) 100%
+      );
+    }
   </style>
 
   <!-- All Three.js imports via CDN. main.js uses bare specifiers like
@@ -115,6 +132,7 @@
 <body>
 
   <canvas id="auros-canvas" class="canvas" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
 
   <!-- HUD: four corner readouts, 10px Geist Mono, color #1C1C1E at 0.7 opacity -->
   <div class="hud hud--tl" aria-hidden="true">MANTAWORKS // REF: ALPHA_V4</div>
