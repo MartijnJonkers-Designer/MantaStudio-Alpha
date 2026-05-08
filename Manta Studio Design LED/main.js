@@ -72,7 +72,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  renderer.toneMappingExposure = 0.85;          // v1.28 — was 1.0; dim global ~15%
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -179,7 +179,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     transmission: 1.0,
     ior: 1.5,
     thickness: 1.5,
-    envMapIntensity: 1.5,
+    envMapIntensity: 1.0,                           // v1.28 — was 1.5; less env reflection
     attenuationDistance: 1.2,
     attenuationColor: new THREE.Color(0xC8E8FF),
     transparent: true,
@@ -195,7 +195,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      ============================================================ */
   glassMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.fresnelPower     = { value: 2.5 };
-    shader.uniforms.fresnelIntensity = { value: 1.6 };
+    shader.uniforms.fresnelIntensity = { value: 0.6 };   // v1.28 — was 1.6; subtler rim
     shader.uniforms.fresnelColor     = { value: new THREE.Color(0xFFFFFF) };
 
     shader.fragmentShader =
@@ -259,9 +259,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         // Hue cycles cyan <-> lavender along radius and time.
         float hueT = sin(dist * 3.5 - uTime * 0.30) * 0.5 + 0.5;
 
-        // HDR pastel palette (peak channels > bloom threshold 1.1).
-        vec3 cyan     = vec3(0.40, 1.60, 1.50);
-        vec3 lavender = vec3(1.45, 1.40, 1.55);
+        // v1.28 — HDR palette dialed back. Peaks just above bloom threshold
+        // (1.20) so bands glow softly instead of screaming.
+        vec3 cyan     = vec3(0.25, 1.25, 1.20);
+        vec3 lavender = vec3(1.20, 1.15, 1.25);
         vec3 bandColor = mix(cyan, lavender, hueT);
 
         // Off-white base sits below threshold, never glows.
@@ -376,9 +377,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.45,   // strength
-    0.75,   // radius
-    1.10    // threshold — only HDR pixels and Fresnel-bright edges qualify
+    0.15,   // v1.28 — was 0.45; one-third halo
+    0.50,   // v1.28 — was 0.75; less spread
+    1.20    // v1.28 — was 1.10; tighter, only the brightest HDR pixels qualify
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -413,5 +414,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     bloomPass.setSize(window.innerWidth, window.innerHeight);
   });
 
-  console.log("[Auros] v1.27 — Cinematic Sculpt: 4 layers (cracks + fresnel + aura + IBL + bloom) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.28 — Calm 4-layer (Fresnel/HDR/bloom/exposure all reduced) · Three.js", THREE.REVISION);
 })();
