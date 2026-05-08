@@ -276,8 +276,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   /* ============================================================
      LOAD THE MANTA GLTF
      ============================================================ */
-  let manta = null;          // populated when GLTF finishes loading
-  let mixer = null;          // animation mixer, if model has clips
+  let manta = null;             // outer Group (transforms applied here)
+  let mantaModel = null;        // inner GLTF scene (animations applied here)
+  let mixer = null;             // animation mixer
+
+  // v1.24 — root pin: snapshot mantaModel's natural transform at load time so
+  // we can reset it every frame after the mixer animates. This kills any
+  // root-translation track in the swim cycle (which was pushing the manta
+  // through the camera) without breaking the skeletal bone animation.
+  const mantaModelOrigPos   = new THREE.Vector3();
+  const mantaModelOrigQuat  = new THREE.Quaternion();
+  const mantaModelOrigScale = new THREE.Vector3();
+
   const clock = new THREE.Clock();
 
   // v1.15 — cursor tracking. mouse is in normalized device space [-1, +1].
@@ -322,7 +332,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   loader.load(
     "model_84b_-_manta_ray_swimming.glb",
     (gltf) => {
-      const mantaModel = gltf.scene;
+      mantaModel = gltf.scene;
+
+      // v1.24 — snapshot the natural root transform BEFORE we touch anything.
+      mantaModelOrigPos.copy(mantaModel.position);
+      mantaModelOrigQuat.copy(mantaModel.quaternion);
+      mantaModelOrigScale.copy(mantaModel.scale);
 
       // v1.21 DIAGNOSTIC: dump the model's natural transforms BEFORE we touch anything.
       console.log("[Auros] DIAG — mantaModel native transform:");
@@ -369,7 +384,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       // in v1.20). Auto-fit stays disabled until we trust it for this rigged model.
       // Tune HARDCODED_SCALE up/down based on how the manta looks in frame.
       const USE_AUTOFIT       = false;
-      const HARDCODED_SCALE   = 0.40;
+      const HARDCODED_SCALE   = 0.50;     // v1.24 — was 0.40 (user: 'little smaller than normal')
       const AUTOFIT_TARGET    = 1.5;
 
       let scale;
@@ -403,9 +418,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const worldSize   = worldBbox.getSize(new THREE.Vector3());
       manta.position.sub(worldCenter);
 
-      // 4. v1.23 — animations OFF again (testing whether the swim cycle's
-      //    root-translation track is dragging the manta out of frame).
-      const ENABLE_ANIMATIONS = false;
+      // 4. v1.24 — animations BACK ON, but the tick loop pins mantaModel's
+      //    root transform every frame. Bones still animate (skeletal swim
+      //    cycle plays); only the root translation track is neutralised.
+      const ENABLE_ANIMATIONS = true;
       if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(mantaModel);
         for (const clip of gltf.animations) {
@@ -582,6 +598,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     const delta = clock.getDelta();
     if (mixer) mixer.update(delta);
 
+    // v1.24 — ROOT PIN. Reset mantaModel's root transform every frame so
+    // the swim animation's translation track can't drag the manta off-screen.
+    // Bones (skeletal animation) are independent of the root node and continue
+    // to animate normally; only the root's position/rotation/scale tracks are
+    // neutralised. This is what keeps the manta swimming in place.
+    if (mantaModel) {
+      mantaModel.position.copy(mantaModelOrigPos);
+      mantaModel.quaternion.copy(mantaModelOrigQuat);
+      mantaModel.scale.copy(mantaModelOrigScale);
+    }
+
     // v1.15 — cursor smoothing + propagation to manta and floor.
     smoothMouse.x += (mouse.x - smoothMouse.x) * 0.06;
     smoothMouse.y += (mouse.y - smoothMouse.y) * 0.06;
@@ -643,5 +670,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.23 — Scale 0.40 + rotation ON + animations OFF (testing animation displacement) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.24 — Root pin (anims swim in place) + scale 0.50 · Three.js", THREE.REVISION);
 })();
