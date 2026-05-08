@@ -61,7 +61,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      CAMERA — 3/4 top-down to match reference
      ============================================================ */
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 50);
-  camera.position.set(0.0, 1.4, 4.0);   // v1.20 — was (0, 1.1, 3.2); back further for wider frame
+  camera.position.set(0.0, 1.1, 3.2);   // v1.25 — back to v1.16 framing for cartoon model
   camera.lookAt(0.0, 0.00, 0.0);
 
   /* ============================================================
@@ -330,7 +330,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const loader = new GLTFLoader();
   loader.load(
-    "model_84b_-_manta_ray_swimming.glb",
+    "cartoon_manta_ray_animated.glb",   // v1.25 — back to cartoon while we focus on BG
     (gltf) => {
       mantaModel = gltf.scene;
 
@@ -379,13 +379,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const nativeSize = nativeBbox.getSize(new THREE.Vector3());
       const longest = Math.max(nativeSize.x, nativeSize.y, nativeSize.z);
 
-      // v1.22 — diagnostic confirmed scale pipeline works (v1.21 at 0.05 = tiny dot).
-      // Now using a manual scale between 0.05 (too small) and 0.58 (apparent overshoot
-      // in v1.20). Auto-fit stays disabled until we trust it for this rigged model.
-      // Tune HARDCODED_SCALE up/down based on how the manta looks in frame.
-      const USE_AUTOFIT       = false;
-      const HARDCODED_SCALE   = 0.50;     // v1.24 — was 0.40 (user: 'little smaller than normal')
-      const AUTOFIT_TARGET    = 1.5;
+      // v1.25 — back to cartoon model, autofit re-enabled (cartoon was well-behaved).
+      const USE_AUTOFIT       = true;
+      const HARDCODED_SCALE   = 0.50;
+      const AUTOFIT_TARGET    = 2.2;      // v1.16's value that worked for cartoon
 
       let scale;
       if (USE_AUTOFIT) {
@@ -670,5 +667,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.24 — Root pin (anims swim in place) + scale 0.50 · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.25 — Cartoon model restored, focus on background · Three.js", THREE.REVISION);
 })();
