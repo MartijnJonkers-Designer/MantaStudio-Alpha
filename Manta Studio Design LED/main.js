@@ -364,10 +364,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const nativeSize = nativeBbox.getSize(new THREE.Vector3());
       const longest = Math.max(nativeSize.x, nativeSize.y, nativeSize.z);
 
-      // v1.21 DIAGNOSTIC: hardcoded scale to test whether scale even applies.
-      // Toggle USE_AUTOFIT to false to use HARDCODED_SCALE instead.
-      const USE_AUTOFIT       = false;       // v1.21 — false for diagnostic
-      const HARDCODED_SCALE   = 0.05;        // tiny, manta should be a small dot if applied
+      // v1.22 — diagnostic confirmed scale pipeline works (v1.21 at 0.05 = tiny dot).
+      // Now using a manual scale between 0.05 (too small) and 0.58 (apparent overshoot
+      // in v1.20). Auto-fit stays disabled until we trust it for this rigged model.
+      // Tune HARDCODED_SCALE up/down based on how the manta looks in frame.
+      const USE_AUTOFIT       = false;
+      const HARDCODED_SCALE   = 0.40;
       const AUTOFIT_TARGET    = 1.5;
 
       let scale;
@@ -384,9 +386,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         console.warn("[Auros] DIAG — using HARDCODED_SCALE =", HARDCODED_SCALE, "(autofit bypassed)");
       }
 
-      // 3. Group wrapper.
-      // v1.21 — also TEMPORARILY remove rotation to isolate scale/centering.
-      const USE_ROTATION = false;          // v1.21 — false for diagnostic
+      // 3. Group wrapper. Rotation back on (v1.21 had it off for isolation).
+      const USE_ROTATION = true;
 
       manta = new THREE.Group();
       manta.add(mantaModel);
@@ -402,8 +403,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       const worldSize   = worldBbox.getSize(new THREE.Vector3());
       manta.position.sub(worldCenter);
 
-      // 4. v1.21 DIAGNOSTIC: animations DISABLED.
-      const ENABLE_ANIMATIONS = false;
+      // 4. Animations back on (v1.21 had off for isolation).
+      const ENABLE_ANIMATIONS = true;
       if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(mantaModel);
         for (const clip of gltf.animations) {
@@ -641,5 +642,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.21 — DIAGNOSTIC: hardcoded scale 0.05, no rotation, no animation · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.22 — Manual scale 0.40 + rotation + animations back on · Three.js", THREE.REVISION);
 })();
