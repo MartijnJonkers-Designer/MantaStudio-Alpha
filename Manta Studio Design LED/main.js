@@ -61,7 +61,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      CAMERA — 3/4 top-down to match reference
      ============================================================ */
   const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 50);
-  camera.position.set(0.0, 1.1, 3.2);   // v1.16 — was (0, 1.8, 3.2); less steep, more from-front
+  camera.position.set(0.0, 1.4, 4.0);   // v1.20 — was (0, 1.1, 3.2); back further for wider frame
   camera.lookAt(0.0, 0.00, 0.0);
 
   /* ============================================================
@@ -292,13 +292,39 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     mouse.y = -((e.clientY / window.innerHeight) * 2 - 1);
   }, { passive: true });
 
+  // v1.20 — helper: traverse a root and union all isMesh world-space bboxes.
+  // Robust to skinned meshes (calls computeBoundingBox so bones are respected).
+  function computeWorldBbox(root) {
+    root.updateMatrixWorld(true);
+    const bbox = new THREE.Box3();
+    root.traverse((child) => {
+      if (!child.isMesh) return;
+      if (child.isSkinnedMesh && typeof child.computeBoundingBox === "function") {
+        child.computeBoundingBox();
+        if (child.boundingBox) {
+          const b = child.boundingBox.clone();
+          b.applyMatrix4(child.matrixWorld);
+          bbox.union(b);
+          return;
+        }
+      }
+      if (child.geometry) {
+        if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+        const b = child.geometry.boundingBox.clone();
+        b.applyMatrix4(child.matrixWorld);
+        bbox.union(b);
+      }
+    });
+    return bbox;
+  }
+
   const loader = new GLTFLoader();
   loader.load(
     "model_84b_-_manta_ray_swimming.glb",
     (gltf) => {
       const mantaModel = gltf.scene;
 
-      // 1. Override every material with the shared glass — meshes only.
+      // 1. Override every material with the shared glass.
       let meshCount = 0;
       let skinnedCount = 0;
       mantaModel.traverse((child) => {
@@ -311,59 +337,40 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         }
       });
 
-      // 2. Skinned-mesh aware bounding box (world-space, traversed).
-      mantaModel.updateMatrixWorld(true);
-      const bbox = new THREE.Box3();
-      mantaModel.traverse((child) => {
-        if (!child.isMesh) return;
-        if (child.isSkinnedMesh && typeof child.computeBoundingBox === "function") {
-          child.computeBoundingBox();
-          if (child.boundingBox) {
-            const b = child.boundingBox.clone();
-            b.applyMatrix4(child.matrixWorld);
-            bbox.union(b);
-            return;
-          }
-        }
-        if (child.geometry) {
-          if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
-          const b = child.geometry.boundingBox.clone();
-          b.applyMatrix4(child.matrixWorld);
-          bbox.union(b);
-        }
-      });
+      // 2. Measure NATIVE bbox (model alone, no Group wrapper) to compute scale.
+      const nativeBbox = computeWorldBbox(mantaModel);
+      const nativeSize = nativeBbox.getSize(new THREE.Vector3());
+      const longest = Math.max(nativeSize.x, nativeSize.y, nativeSize.z);
 
-      const size   = bbox.getSize(new THREE.Vector3());
-      const center = bbox.getCenter(new THREE.Vector3());
-      const longest = Math.max(size.x, size.y, size.z);
-
-      let scale = 2.2 / longest;
+      let scale = 1.5 / longest;   // v1.20 — was 2.2; tighter target, accounts for 54° rotation
       if (!isFinite(scale) || scale <= 0) {
-        console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { size, longest });
+        console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { nativeSize, longest });
         scale = 1.0;
       } else {
         scale = Math.max(0.001, Math.min(scale, 1000));
       }
 
-      // 3. v1.19 — GROUP WRAPPER FIX.
-      //    Three.js applies node transforms in order: scale -> rotate -> translate.
-      //    Setting position = -center * scale on the root tries to centre the
-      //    bbox BEFORE rotation, but the rotation then flings the centre
-      //    off-origin. v1.18 had the manta rendering off-centre because of this.
-      //    Fix: shift the inner model so its bbox sits at LOCAL origin, then
-      //    wrap it in a Group that owns the scale/rotation/position. The Group's
-      //    rotation pivots cleanly around the model's geometric centre.
-      mantaModel.position.copy(center).negate();   // center the model in local space
-
+      // 3. v1.20 — ROBUST TWO-PASS PLACEMENT.
+      //    Don't fiddle with mantaModel.position. Wrap in Group, apply scale +
+      //    rotation, add to scene. Then measure the FINAL world-space bbox
+      //    (after all transforms in place) and shift the Group's position by
+      //    -worldCenter. This works regardless of what transforms are baked
+      //    into the GLB (root offsets, axis conversions, child node scales).
       manta = new THREE.Group();
       manta.add(mantaModel);
       manta.scale.setScalar(scale);
       manta.rotation.y = BASE_ROT_Y;
       manta.rotation.x = BASE_ROT_X;
+      scene.add(manta);
 
-      // 4. v1.19 — Animations re-enabled.
-      //    Mixer targets the inner mantaModel (the scene with the rig),
-      //    not the outer Group. The Group's transform is independent.
+      // Compute world bbox AFTER scale + rotation in place, shift Group to centre.
+      const worldBbox = computeWorldBbox(manta);
+      const worldCenter = worldBbox.getCenter(new THREE.Vector3());
+      const worldSize   = worldBbox.getSize(new THREE.Vector3());
+      manta.position.sub(worldCenter);   // place world bbox centre at origin
+
+      // 4. Animations enabled. Mixer targets inner mantaModel (where the rig is),
+      //    not the outer Group, so Group transforms stay independent of rig.
       const ENABLE_ANIMATIONS = true;
       if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(mantaModel);
@@ -372,17 +379,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         }
       }
 
-      scene.add(manta);
-
       console.log("[Auros] GLTF loaded ─────────────────────────");
-      console.log(`  meshes        : ${meshCount}`);
-      console.log(`  skinned meshes: ${skinnedCount}`);
-      console.log(`  bbox size     : ${size.x.toFixed(3)} x ${size.y.toFixed(3)} x ${size.z.toFixed(3)}`);
-      console.log(`  bbox center   : (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
-      console.log(`  longest axis  : ${longest.toFixed(3)}`);
-      console.log(`  scale applied : ${scale.toFixed(6)}`);
-      console.log(`  clip count    : ${gltf.animations?.length ?? 0}`);
-      console.log(`  animations    : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED"}`);
+      console.log(`  meshes         : ${meshCount}`);
+      console.log(`  skinned meshes : ${skinnedCount}`);
+      console.log(`  native bbox    : ${nativeSize.x.toFixed(3)} x ${nativeSize.y.toFixed(3)} x ${nativeSize.z.toFixed(3)}`);
+      console.log(`  longest axis   : ${longest.toFixed(3)}`);
+      console.log(`  scale applied  : ${scale.toFixed(6)}`);
+      console.log(`  world bbox     : ${worldSize.x.toFixed(3)} x ${worldSize.y.toFixed(3)} x ${worldSize.z.toFixed(3)} (post-rotation)`);
+      console.log(`  world center   : (${worldCenter.x.toFixed(3)}, ${worldCenter.y.toFixed(3)}, ${worldCenter.z.toFixed(3)}) -> shifted to origin`);
+      console.log(`  clip count     : ${gltf.animations?.length ?? 0}`);
+      console.log(`  animations     : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED"}`);
       console.log("──────────────────────────────────────────────");
     },
     (xhr) => {
@@ -595,5 +601,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.19 — Group wrapper centering fix + animations re-enabled · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.20 — Robust two-pass placement + tighter framing + camera back · Three.js", THREE.REVISION);
 })();
