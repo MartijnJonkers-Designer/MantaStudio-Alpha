@@ -294,41 +294,81 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const loader = new GLTFLoader();
   loader.load(
-    "model_84b_-_manta_ray_swimming.glb",   // v1.17 — realistic Sketchfab model (replaces cartoon)
+    "model_84b_-_manta_ray_swimming.glb",
     (gltf) => {
       manta = gltf.scene;
 
-      // 1. Override every material with the shared glass.
+      // 1. Override every material with the shared glass — meshes only.
+      //    Also count submeshes by type for diagnostics.
       let meshCount = 0;
+      let skinnedCount = 0;
       manta.traverse((child) => {
         if (child.isMesh) {
           child.material = glassMaterial;
           child.castShadow = true;
           child.receiveShadow = false;
           meshCount++;
+          if (child.isSkinnedMesh) skinnedCount++;
         }
       });
 
-      // 2. Auto-fit: center at origin, scale longest axis to 2 units.
-      // v1.10 — was 3.0; manta exceeded camera frame width (~2.5u at FOV 38°
-      // from distance 3.67), eating the BG. 2.0 leaves ~25% margin.
-      const bbox = new THREE.Box3().setFromObject(manta);
-      const size = bbox.getSize(new THREE.Vector3());
+      // 2. v1.18 — Skinned-mesh aware bounding box.
+      //    Box3.setFromObject on the root often returns the bind-pose box
+      //    for skinned meshes, which can be tiny or huge depending on rig.
+      //    We instead expand the box from each Mesh's WORLD-space geometry
+      //    after updating world matrices. For SkinnedMesh we use
+      //    boundingBox computed from the geometry's bones if available.
+      manta.updateMatrixWorld(true);
+      const bbox = new THREE.Box3();
+      manta.traverse((child) => {
+        if (!child.isMesh) return;
+        if (child.isSkinnedMesh && typeof child.computeBoundingBox === "function") {
+          // Three.js SkinnedMesh has computeBoundingBox that respects bones.
+          child.computeBoundingBox();
+          if (child.boundingBox) {
+            const b = child.boundingBox.clone();
+            b.applyMatrix4(child.matrixWorld);
+            bbox.union(b);
+            return;
+          }
+        }
+        if (child.geometry) {
+          if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+          const b = child.geometry.boundingBox.clone();
+          b.applyMatrix4(child.matrixWorld);
+          bbox.union(b);
+        }
+      });
+
+      const size   = bbox.getSize(new THREE.Vector3());
       const center = bbox.getCenter(new THREE.Vector3());
       const longest = Math.max(size.x, size.y, size.z);
-      const scale = 2.2 / longest;   // v1.16 — was 2.0; slightly larger in frame
+
+      // v1.18 — Defensive scale clamp. If bbox math goes wrong (zero
+      // size, infinite, NaN), fall back to scale 1 so the manta is at
+      // least visible at native size for further diagnostics.
+      let scale = 2.2 / longest;
+      if (!isFinite(scale) || scale <= 0) {
+        console.warn("[Auros] Auto-fit produced bad scale, falling back to 1.0", { size, longest });
+        scale = 1.0;
+      } else {
+        scale = Math.max(0.001, Math.min(scale, 1000));   // sanity clamp
+      }
+
       manta.position.sub(center.multiplyScalar(scale));
       manta.scale.setScalar(scale);
 
-      // v1.10 — head moved from 1-2 o'clock (v1.9 was 180° wrong) to ~7-8.
-      // Sign flipped: -7*PI/10 -> +3*PI/10 (equivalent rotation, opposite hemisphere).
-      // If still off, dial is rotation.y — each clock hour ≈ +/- PI/6 (30°).
-      // Initial pose — tick loop will add cursor-driven offsets each frame.
-      manta.rotation.y = BASE_ROT_Y;          // ~+54°, head at ~7-8 o'clock
-      manta.rotation.x = BASE_ROT_X;          // slight nose-down tip
+      // Diagonal pose; cursor offsets layered on in the tick loop.
+      manta.rotation.y = BASE_ROT_Y;
+      manta.rotation.x = BASE_ROT_X;
 
-      // 3. Animation mixer (if any clips).
-      if (gltf.animations && gltf.animations.length > 0) {
+      // 3. v1.18 — Animations TEMPORARILY DISABLED for diagnostics.
+      //    Some swim animations translate the root or scale wildly,
+      //    which can throw the model off-screen even when auto-fit
+      //    is correct. Re-enable by uncommenting the block below
+      //    once we confirm static layout works.
+      const ENABLE_ANIMATIONS = false;
+      if (ENABLE_ANIMATIONS && gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(manta);
         for (const clip of gltf.animations) {
           mixer.clipAction(clip).play();
@@ -336,9 +376,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       }
 
       scene.add(manta);
-      console.log(
-        `[Auros] GLTF loaded · meshes=${meshCount} · scale=${scale.toFixed(3)} · clips=${gltf.animations?.length ?? 0}`
-      );
+
+      // v1.18 — verbose diagnostic logging.
+      console.log("[Auros] GLTF loaded ─────────────────────────");
+      console.log(`  meshes        : ${meshCount}`);
+      console.log(`  skinned meshes: ${skinnedCount}`);
+      console.log(`  bbox size     : ${size.x.toFixed(3)} x ${size.y.toFixed(3)} x ${size.z.toFixed(3)}`);
+      console.log(`  bbox center   : (${center.x.toFixed(3)}, ${center.y.toFixed(3)}, ${center.z.toFixed(3)})`);
+      console.log(`  longest axis  : ${longest.toFixed(3)}`);
+      console.log(`  scale applied : ${scale.toFixed(6)}`);
+      console.log(`  clip count    : ${gltf.animations?.length ?? 0}`);
+      console.log(`  animations    : ${ENABLE_ANIMATIONS ? "enabled" : "DISABLED for diagnostics"}`);
+      console.log("──────────────────────────────────────────────");
     },
     (xhr) => {
       if (xhr.lengthComputable) {
@@ -550,5 +599,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.17 — Realistic GLB swap (model_84b manta ray swimming) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.18 — Defensive auto-fit + diagnostics (animations disabled) · Three.js", THREE.REVISION);
 })();
