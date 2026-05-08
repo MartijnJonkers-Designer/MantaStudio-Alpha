@@ -23,10 +23,6 @@
 import * as THREE from "three";
 import { GLTFLoader }          from "three/addons/loaders/GLTFLoader.js";
 import { MeshSurfaceSampler }  from "three/addons/math/MeshSurfaceSampler.js";
-import { EffectComposer }      from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass }          from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass }     from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass }          from "three/addons/postprocessing/OutputPass.js";
 
 (function () {
   const canvas = document.getElementById("auros-canvas");
@@ -122,24 +118,27 @@ import { OutputPass }          from "three/addons/postprocessing/OutputPass.js";
       varying float vMouseGlow;
 
       void main() {
-        // Sample soft alpha map — this is what makes the dots bokeh-soft
-        // instead of harsh squares.
+        // Soft alpha map for bokeh-like dots
         vec4 tex = texture2D(uPointTex, gl_PointCoord);
         float a = tex.a;
         if (a < 0.01) discard;
 
-        // Base colour: pale lavender-white per spec (#F3E5F5)
-        vec3 color = vec3(0.953, 0.898, 0.961);
+        // v2.2 — VISIBLE silver-lavender, clearly darker than white BG.
+        // Bloom doesn't work on pure-white BG (nothing to add to), so the
+        // dots themselves need to provide contrast. These values show as
+        // soft silver dots on white instead of disappearing into it.
+        vec3 highlight = vec3(0.78, 0.74, 0.86);   // pale silver-lavender (lightest)
+        vec3 mid       = vec3(0.55, 0.50, 0.70);   // mid silver-violet
+        vec3 deep      = vec3(0.40, 0.35, 0.55);   // deep violet (darkest dots)
 
-        // HDR brightness boost where alpha is highest (centre of the dot).
-        // Pixels above bloom threshold get the bloom halo -> "made of light".
-        float intensity = 1.0 + a * 1.6;
+        // Use alpha as a proxy for dot-position (centre vs edge of sprite)
+        // and pick a colour from the gradient.
+        vec3 baseColor = mix(deep, mix(mid, highlight, a), a);
 
-        // Mouse-proximate dots glow toward white and brighter
-        intensity *= 1.0 + vMouseGlow * 0.7;
-        color = mix(color, vec3(1.0), vMouseGlow * 0.4);
+        // Mouse glow brightens toward pale highlight.
+        vec3 finalColor = mix(baseColor, vec3(0.95, 0.92, 0.98), vMouseGlow * 0.6);
 
-        gl_FragColor = vec4(color * intensity, a * 0.90);
+        gl_FragColor = vec4(finalColor, a * 0.90);
       }
     `,
 
@@ -230,25 +229,10 @@ import { OutputPass }          from "three/addons/postprocessing/OutputPass.js";
     (err) => console.error("[Auros] GLTF load failed:", err)
   );
 
-  /* ============================================================
-     Post-processing: bloom catches HDR particle cores.
-     Threshold high so the white BG (linear 1.0) doesn't bloom.
-     Only particle pixels boosted to >1.5 by the centre intensity
-     pass cross threshold and produce the soft halo.
-     ============================================================ */
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  composer.setSize(window.innerWidth, window.innerHeight);
-  composer.addPass(new RenderPass(scene, camera));
-
-  const bloomPass = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.6,    // strength — the constellation aura
-    0.85,   // radius — soft, wide halo
-    1.20    // threshold — only HDR particle cores qualify
-  );
-  composer.addPass(bloomPass);
-  composer.addPass(new OutputPass());
+  // v2.2 — bloom removed. On a pure-white BG bloom literally cannot add
+  // brightness (nothing is "below white" for the halo to brighten), so it
+  // contributed nothing visible and was eating render time. Dots now
+  // provide contrast via colour alone (silver-violet on white).
 
   /* ---------- Tick ---------- */
   const BASE_ROT_Y = 3 * Math.PI / 10;
@@ -266,7 +250,7 @@ import { OutputPass }          from "three/addons/postprocessing/OutputPass.js";
     particleMat.uniforms.uTime.value = clock.getElapsedTime();
     particleMat.uniforms.uMouse.value.copy(smoothMouse);
 
-    composer.render();
+    renderer.render(scene, camera);
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
@@ -276,8 +260,6 @@ import { OutputPass }          from "three/addons/postprocessing/OutputPass.js";
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight, false);
-    composer.setSize(window.innerWidth, window.innerHeight);
-    bloomPass.setSize(window.innerWidth, window.innerHeight);
   });
 
   /* ---------- CTA ---------- */
@@ -288,5 +270,5 @@ import { OutputPass }          from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v2.1 Digital Silk — surface-sampled point cloud + bloom · Three.js", THREE.REVISION);
+  console.log("[Auros] v2.2 Digital Silk — surface-sampled, visible silver dots, no bloom · Three.js", THREE.REVISION);
 })();
