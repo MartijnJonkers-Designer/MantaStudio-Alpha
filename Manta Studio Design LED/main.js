@@ -53,8 +53,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     c.width = 2; c.height = 512;
     const ctx = c.getContext("2d");
     const grad = ctx.createLinearGradient(0, 0, 0, 512);
-    grad.addColorStop(0.0, "#FFFFFF");
-    grad.addColorStop(1.0, "#F5F5F8");
+    grad.addColorStop(0.0, "#F2F4F8");   // v1.29 — cool grey-white, matches reference BG
+    grad.addColorStop(1.0, "#E8EBF1");   // v1.29 — slightly deeper at bottom for depth
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 2, 512);
     const tex = new THREE.CanvasTexture(c);
@@ -179,9 +179,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     transmission: 1.0,
     ior: 1.5,
     thickness: 1.5,
-    envMapIntensity: 1.0,                           // v1.28 — was 1.5; less env reflection
+    envMapIntensity: 0.6,                           // v1.29 — was 1.0; less white reflection on glass
     attenuationDistance: 1.2,
-    attenuationColor: new THREE.Color(0xC8E8FF),
+    attenuationColor: new THREE.Color(0x80B8DD),    // v1.29 — was 0xC8E8FF; saturated cyan-blue tint
     transparent: true,
     side: THREE.DoubleSide,
     normalMap: crackTexture,                        // Layer 1: cracks visible as relief
@@ -195,7 +195,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
      ============================================================ */
   glassMaterial.onBeforeCompile = (shader) => {
     shader.uniforms.fresnelPower     = { value: 2.5 };
-    shader.uniforms.fresnelIntensity = { value: 0.6 };   // v1.28 — was 1.6; subtler rim
+    shader.uniforms.fresnelIntensity = { value: 0.20 };  // v1.29 — was 0.6; hint, not halo (no flashbang)
     shader.uniforms.fresnelColor     = { value: new THREE.Color(0xFFFFFF) };
 
     shader.fragmentShader =
@@ -259,10 +259,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         // Hue cycles cyan <-> lavender along radius and time.
         float hueT = sin(dist * 3.5 - uTime * 0.30) * 0.5 + 0.5;
 
-        // v1.28 — HDR palette dialed back. Peaks just above bloom threshold
-        // (1.20) so bands glow softly instead of screaming.
-        vec3 cyan     = vec3(0.25, 1.25, 1.20);
-        vec3 lavender = vec3(1.20, 1.15, 1.25);
+        // v1.29 — saturated turquoise + pink-violet matching the reference image.
+        // Higher peaks for vibrancy after ACES tonemap; manta's own brightness
+        // is dialed way down (Fresnel 0.20, envMap 0.6) so the bands can glow
+        // without the manta competing as another bright source.
+        vec3 cyan     = vec3(0.30, 1.70, 1.55);
+        vec3 lavender = vec3(1.60, 1.15, 1.60);
         vec3 bandColor = mix(cyan, lavender, hueT);
 
         // Off-white base sits below threshold, never glows.
@@ -377,9 +379,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.15,   // v1.28 — was 0.45; one-third halo
-    0.50,   // v1.28 — was 0.75; less spread
-    1.20    // v1.28 — was 1.10; tighter, only the brightest HDR pixels qualify
+    0.30,   // v1.29 — was 0.15; visible band glow
+    0.70,   // v1.29 — was 0.50; wider soft halo
+    1.10    // v1.29 — was 1.20; bands catch easier
   );
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
@@ -414,5 +416,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     bloomPass.setSize(window.innerWidth, window.innerHeight);
   });
 
-  console.log("[Auros] v1.28 — Calm 4-layer (Fresnel/HDR/bloom/exposure all reduced) · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.29 — Reference color match (saturated bands, dim manta, cool BG) · Three.js", THREE.REVISION);
 })();
