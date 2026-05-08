@@ -294,7 +294,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   const loader = new GLTFLoader();
   loader.load(
-    "cartoon_manta_ray_animated.glb",
+    "model_84b_-_manta_ray_swimming.glb",   // v1.17 — realistic Sketchfab model (replaces cartoon)
     (gltf) => {
       manta = gltf.scene;
 
@@ -550,5 +550,5 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
-  console.log("[Auros] v1.16 — Hero shot pass: HDR ripples + bloom-glow + dramatic cracks + camera + vignette · Three.js", THREE.REVISION);
+  console.log("[Auros] v1.17 — Realistic GLB swap (model_84b manta ray swimming) · Three.js", THREE.REVISION);
 })();
